@@ -1,48 +1,67 @@
-def encontrar_barato(agent_state):
-    """Encuentra el vuelo más barato en la lista"""
-    
-    if not agent_state.flights:
-        agent_state.decision = "No hay vuelos"
-        return agent_state
-    
-    # Ordenar por precio
-    vuelos_ordenados = sorted(agent_state.flights, key=lambda x: x.price)
-    
-    # El primero es el más barato
-    barato = vuelos_ordenados[0]
-    
-    # Guardar decisión en el estado
-    agent_state.decision = f"Mejor opción: {barato.route} a ${barato.price}"
-    
-    return agent_state
+from state import FlightMonitorState
 
-def validar_escalas(agent_state):
-    """Valida vuelos según MAX_STOPS Y MAX_PRICE por ruta"""
+
+def evaluate_rules(state: FlightMonitorState) -> FlightMonitorState:
+    """
+    NODE: Filtra vuelos según reglas duras por ruta.
     
-    vuelos_validos = []
-    
-    for vuelo in agent_state.flights:
-        # Obtener config de ESTA ruta
-        ruta_config = agent_state.routes_config.get(vuelo.route)
-        
-        if not ruta_config:
-            continue  # Si ruta no está configurada, ignora
-        
-        # Validar contra los límites de ESTA ruta
-        max_stops = ruta_config["max_stops"]
-        max_price = ruta_config["max_price"]
-        
-        # ¿Cumple?
-        if vuelo.stops <= max_stops and vuelo.price <= max_price:
-            vuelos_validos.append(vuelo)
-    
-    # Resultado
-    if not vuelos_validos:
-        agent_state.decision = "RECHAZADO: Ningún vuelo cumple restricciones"
-        return agent_state
-    
-    # Si hay válidos, el más barato
-    barato = min(vuelos_validos, key=lambda x: x.price)
-    agent_state.decision = f"✓ VÁLIDO: {barato.flight_number} ({barato.route}) a ${barato.price} con {barato.stops} escalas"
-    
-    return agent_state
+    Lee: state.latest_offers y state.routes_config
+    Escribe: state.rule_matches y state.suspicious_cases
+    """
+    print("\n[NODE] evaluate_rules: evaluando vuelos...")
+
+    for vuelo in state.latest_offers:
+        config = state.routes_config.get(vuelo.route)
+
+        if not config:
+            continue
+
+        max_price = config["max_price"]
+        max_stops = config["max_stops"]
+
+        cumple_precio = vuelo.price <= max_price
+        cumple_escalas = vuelo.stops <= max_stops
+
+        if cumple_precio and cumple_escalas:
+            state.rule_matches.append(vuelo)
+            print(f"  ✅ {vuelo.flight_number} | {vuelo.route} | ${vuelo.price} | {vuelo.stops} escalas")
+        else:
+            state.suspicious_cases.append(vuelo)
+            print(f"  ❌ {vuelo.flight_number} | {vuelo.route} | ${vuelo.price} | {vuelo.stops} escalas")
+
+    print(f"\n[NODE] evaluate_rules: {len(state.rule_matches)} válidos, {len(state.suspicious_cases)} rechazados")
+    return state
+
+def decision_router(state: FlightMonitorState) -> FlightMonitorState:
+    """
+    NODE: Decide qué acción tomar basado en los resultados de evaluate_rules.
+
+    Lee: state.rule_matches y state.suspicious_cases
+    Escribe: state.alerts_to_send
+    """
+    print("\n[NODE] decision_router: decidiendo...")
+
+    if not state.rule_matches and not state.suspicious_cases:
+        print("  → no_match: ningún vuelo cumple restricciones")
+        return state
+
+    for vuelo in state.rule_matches:
+        alerta = {
+            "tipo": "clear_deal",
+            "vuelo": vuelo,
+            "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} con {vuelo.stops} escalas"
+        }
+        state.alerts_to_send.append(alerta)
+        print(f"  → clear_deal: {alerta['mensaje']}")
+
+    for vuelo in state.suspicious_cases:
+        alerta = {
+            "tipo": "review",
+            "vuelo": vuelo,
+            "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} supera límites"
+        }
+        state.alerts_to_send.append(alerta)
+        print(f"  → review: {alerta['mensaje']}")
+
+    print(f"\n[NODE] decision_router: {len(state.alerts_to_send)} decisiones tomadas")
+    return state
