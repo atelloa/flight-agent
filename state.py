@@ -19,29 +19,25 @@ class Flight:
 class FlightMonitorState:
     """Expediente completo del agente de monitoreo"""
 
-    # Config por ruta (max precio y escalas)
-    routes_config: Dict = field(default_factory=lambda: {
-        "LIM-MAD": {"max_stops": 2, "max_price": 700},
-        "MAD-MCO": {"max_stops": 2, "max_price": 300},
-        "MCO-LIM": {"max_stops": 2, "max_price": 600},
-    })
+    # Config por ruta - se carga desde config/routes.yaml
+    routes_config: Dict = field(default_factory=dict)
 
-    # Config global (fechas preferidas, rango de días)
+    # Config global - se carga desde config/routes.yaml
     global_config: Dict = field(default_factory=lambda: {
         "date_range": 3,
         "preferred_dates": {},
     })
 
-    # Vuelos encontrados en esta ejecución
+    # Vuelos encontrados en esta ejecucion
     latest_offers: List = field(default_factory=list)
 
-    # Resultados de evaluación
+    # Resultados de evaluacion
     rule_matches: List = field(default_factory=list)
     suspicious_cases: List = field(default_factory=list)
 
     # Alertas
     alerts_to_send: List = field(default_factory=list)
 
-    # Auditoría
+    # Auditoria
     run_id: str = ""
     timestamp: datetime = field(default_factory=datetime.now)

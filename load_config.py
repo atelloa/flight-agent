@@ -1,0 +1,33 @@
+import yaml
+from datetime import datetime
+from state import FlightMonitorState
+
+
+def load_config(state: FlightMonitorState) -> FlightMonitorState:
+    """
+    NODE: Carga configuracion desde config/routes.yaml.
+    
+    Lee: config/routes.yaml
+    Escribe: state.routes_config y state.global_config
+    """
+    print("\n[NODE] load_config: cargando configuracion...")
+
+    with open("config/routes.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    # Cargar rutas
+    state.routes_config = {}
+    for route, values in config["routes"].items():
+        state.routes_config[route] = {
+            "max_price": values["max_price"],
+            "max_stops": values["max_stops"],
+        }
+        state.global_config["preferred_dates"][route] = datetime.strptime(
+            values["date"], "%Y-%m-%d"
+        )
+
+    # Cargar config global
+    state.global_config["date_range"] = config["global"]["date_range"]
+
+    print(f"  Rutas cargadas: {list(state.routes_config.keys())}")
+    return state
