@@ -6,9 +6,9 @@
 
 Routes:
 
-* `LIM → MAD`
-* `MAD → USA`
-* `USA → LIM`
+- LIM -> MAD (Nov 15, 2026)
+- MAD -> MCO (Nov 23, 2026 - Thanksgiving window)
+- MCO -> LIM (Nov 29, 2026)
 
 The agent searches flights with SerpAPI, stores prices in SQLite, compares them with history, evaluates rules, and decides one of three outcomes:
 
@@ -31,9 +31,27 @@ The agent searches flights with SerpAPI, stores prices in SQLite, compares them 
 
 This document describes architecture, not implementation.
 
+Pattern used: Enterprise Agentic Workflow (Event-driven state machine with bounded agentic subgraphs).
+
+Rule: Code handles the normal process. Rules handle objective decisions. Claude reasons about ambiguous cases. LangGraph orchestrates state, branches, loops and persistence.
+
 ---
 
 ## 3. High-Level Architecture
+
+### System Context (full system)
+
+```mermaid
+flowchart TD
+    U[User - Frontend] -->|configures routes and filters| B[Backend API - Phase 7]
+    B -->|stores config| DB[(SQLite)]
+    DB -->|reads config| A[flight-agent]
+    A -->|searches| S[SerpAPI]
+    A -->|stores history| DB
+    A -->|sends| N[Notifications - Email / Telegram]
+    N -->|alerts| U
+```
+### Agent Flow (internal)
 
 ```mermaid
 flowchart LR
@@ -42,7 +60,6 @@ flowchart LR
     C --> D[Compare]
     D --> E[Evaluate]
     E --> F[Router]
-
     F -->|Good flight| G[Alert]
     F -->|Unclear case| H[Review]
     F -->|No action| I[End]
@@ -175,6 +192,19 @@ Purpose:
 | `observability/` | Logs and traces              |
 | `tests/`         | Rule and workflow validation |
 
+Note: MVP uses flat file structure. Will migrate to this structure in Phase 6.
+
+Purpose:
+
+| Folder            | Purpose                      |
+| ----------------- | ---------------------------- |
+| `config/`         | Route and rule configuration |
+| `data/`           | SQLite database              |
+| `nodes/`          | Workflow steps               |
+| `tools/`          | Reusable capabilities        |
+| `observability/`  | Logs and traces              |
+| `tests/`          | Rule and workflow validation |
+
 ---
 
 ## 9. Data Flow Example
@@ -225,14 +255,17 @@ Final reason:
 
 ## 11. Next Phases
 
-| Phase   | Goal                            |
-| ------- | ------------------------------- |
-| Phase 1 | Local agent with console output |
-| Phase 2 | Scheduled monitoring            |
-| Phase 3 | Real alerts                     |
-| Phase 4 | Manual review queue             |
-| Phase 5 | LLM-assisted explanations       |
-| Phase 6 | Better logging and traces       |
+| Phase   | Goal                          | Layer               |
+| ------- | ----------------------------- | ------------------- |
+| Phase 1 | Local agent with console output | Agent             |
+| Phase 2 | Scheduled monitoring          | Agent               |
+| Phase 3 | Real alerts                   | Notifications       |
+| Phase 4 | Manual review queue           | Agent + SQLite      |
+| Phase 5 | LLM-assisted explanations     | Agent (Claude)      |
+| Phase 6 | Better logging and traces     | Agent + SQLite      |
+| Phase 7 | User configuration interface  | Frontend + Backend API |
+
+Note: Backend API appears in Phase 7 only. Phases 1-6 use SQLite internally without exposing an external API.
 
 ---
 

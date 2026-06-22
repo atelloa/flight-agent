@@ -1,0 +1,19 @@
+routes:
+  LIM-MAD:
+    max_price: 700
+    max_stops: 2
+    date: "2026-11-15"
+  MAD-MCO:
+    max_price: 500
+    max_stops: 2
+    date: "2026-11-23"
+  MCO-LIM:
+    max_price: 600
+    max_stops: 2
+    date: "2026-11-29"
+
+global:
+  date_range: 3
+  thanksgiving_window:
+    start: "2026-11-23"
+    end: "2026-11-29"
