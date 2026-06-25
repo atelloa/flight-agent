@@ -72,29 +72,41 @@ def buscar_ruta(departure_id: str, arrival_id: str, date: str) -> list:
 def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     """
     NODE: Busca vuelos para todas las rutas configuradas.
-    
-    Lee: state.routes_config (qué rutas y fechas)
-    Escribe: state.latest_offers (vuelos encontrados)
+    Busca en un rango de fechas (date_range dias antes y despues).
+
+    Lee: state.routes_config y state.global_config
+    Escribe: state.latest_offers
     """
     print("\n[NODE] fetch_flights: buscando vuelos...")
 
     dates = state.global_config.get("preferred_dates", {})
+    date_range = state.global_config.get("date_range", 0)
 
     for route, config in state.routes_config.items():
         departure_id, arrival_id = route.split("-")
-        date_obj = dates.get(route)
+        base_date = dates.get(route)
 
-        if not date_obj:
+        if not base_date:
             print(f"  [SKIP] {route}: sin fecha configurada")
             continue
 
-        date_str = date_obj.strftime("%Y-%m-%d")
-        print(f"  Buscando {route} para {date_str}...")
+        # Generar rango de fechas
+        fechas = []
+        for delta in range(-date_range, date_range + 1):
+            from datetime import timedelta
+            fechas.append(base_date + timedelta(days=delta))
 
-        vuelos = buscar_ruta(departure_id, arrival_id, date_str)
-        state.latest_offers.extend(vuelos)
+        print(f"  Buscando {route} en {len(fechas)} fechas...")
 
-        print(f"  Encontrados: {len(vuelos)} vuelos en {route}")
+        for fecha in fechas:
+            date_str = fecha.strftime("%Y-%m-%d")
+            vuelos = buscar_ruta(departure_id, arrival_id, date_str)
+            state.latest_offers.extend(vuelos)
+
+            if vuelos:
+                print(f"    {date_str}: {len(vuelos)} vuelos")
+            else:
+                print(f"    {date_str}: sin resultados")
 
     print(f"[NODE] fetch_flights: total {len(state.latest_offers)} vuelos")
     return state

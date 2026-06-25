@@ -102,3 +102,51 @@ def store_decisions(state: FlightMonitorState) -> FlightMonitorState:
         print(f"  Guardadas: {len(state.alerts_to_send)} decisiones")
 
     return state
+def send_alert(state: FlightMonitorState) -> FlightMonitorState:
+    """
+    NODE: Envia alertas por Telegram para vuelos clear_deal.
+
+    Lee: state.alerts_to_send
+    Escribe: Telegram (mensaje al usuario)
+    """
+    import requests
+    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+    print("\n[NODE] send_alert: enviando alertas...")
+
+    clear_deals = [a for a in state.alerts_to_send if a["tipo"] == "clear_deal"]
+    reviews = [a for a in state.alerts_to_send if a["tipo"] == "review"]
+
+    if not clear_deals and not reviews:
+        print("  Sin alertas para enviar")
+        return state
+
+    # Construir mensaje
+    mensaje = "✈️ *Flight Monitor Report*\n\n"
+
+    if clear_deals:
+        mensaje += "✅ *VUELOS DENTRO DEL PRESUPUESTO:*\n"
+        for alerta in clear_deals:
+            v = alerta["vuelo"]
+            mensaje += f"  {v.flight_number} | {v.route} | ${v.price} | {v.stops} escalas | {v.airline}\n"
+
+    if reviews:
+        mensaje += "\n❌ *VUELOS FUERA DEL PRESUPUESTO:*\n"
+        for alerta in reviews:
+            v = alerta["vuelo"]
+            mensaje += f"  {v.flight_number} | {v.route} | ${v.price} | {v.stops} escalas | {v.airline}\n"
+
+    # Enviar a Telegram
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    response = requests.post(url, json={
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "Markdown"
+    })
+
+    if response.status_code == 200:
+        print(f"  Alerta enviada a Telegram")
+    else:
+        print(f"  Error enviando alerta: {response.text}")
+
+    return state
