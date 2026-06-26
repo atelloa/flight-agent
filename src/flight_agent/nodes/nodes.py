@@ -38,8 +38,13 @@ def decision_router(state: FlightMonitorState) -> FlightMonitorState:
     """
     NODE: Decide qué acción tomar basado en los resultados de evaluate_rules.
 
-    Lee: state.rule_matches y state.suspicious_cases
+    Lee: state.rule_matches, state.suspicious_cases y state.routes_config
     Escribe: state.alerts_to_send
+
+    Lógica:
+    - precio <= 90% del limite  → clear_deal directo
+    - precio entre 90% y 110%  → ambiguous → Claude (Phase 5)
+    - precio > 110% del limite  → review directo
     """
     print("\n[NODE] decision_router: decidiendo...")
 
@@ -47,23 +52,43 @@ def decision_router(state: FlightMonitorState) -> FlightMonitorState:
         print("  → no_match: ningún vuelo cumple restricciones")
         return state
 
-    for vuelo in state.rule_matches:
-        alerta = {
-            "tipo": "clear_deal",
-            "vuelo": vuelo,
-            "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} con {vuelo.stops} escalas"
-        }
-        state.alerts_to_send.append(alerta)
-        print(f"  → clear_deal: {alerta['mensaje']}")
+    todos = state.rule_matches + state.suspicious_cases
 
-    for vuelo in state.suspicious_cases:
-        alerta = {
-            "tipo": "review",
-            "vuelo": vuelo,
-            "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} supera límites"
-        }
-        state.alerts_to_send.append(alerta)
-        print(f"  → review: {alerta['mensaje']}")
+    for vuelo in todos:
+        config = state.routes_config.get(vuelo.route)
+        if not config:
+            continue
+
+        max_price = config["max_price"]
+        limite_bajo = max_price * 0.90
+        limite_alto = max_price * 1.10
+
+        if vuelo.price <= limite_bajo:
+            alerta = {
+                "tipo": "clear_deal",
+                "vuelo": vuelo,
+                "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} con {vuelo.stops} escalas"
+            }
+            state.alerts_to_send.append(alerta)
+            print(f"  → clear_deal: {alerta['mensaje']}")
+
+        elif vuelo.price <= limite_alto:
+            alerta = {
+                "tipo": "ambiguous",
+                "vuelo": vuelo,
+                "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} está en zona gris (límite ${max_price})"
+            }
+            state.alerts_to_send.append(alerta)
+            print(f"  → ambiguous: {alerta['mensaje']}")
+
+        else:
+            alerta = {
+                "tipo": "review",
+                "vuelo": vuelo,
+                "mensaje": f"{vuelo.flight_number} ({vuelo.route}) a ${vuelo.price} supera límites"
+            }
+            state.alerts_to_send.append(alerta)
+            print(f"  → review: {alerta['mensaje']}")
 
     print(f"\n[NODE] decision_router: {len(state.alerts_to_send)} decisiones tomadas")
     return state

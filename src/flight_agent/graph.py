@@ -3,6 +3,7 @@ from src.flight_agent.state import FlightMonitorState
 from src.flight_agent.nodes.load_config import load_config
 from src.flight_agent.nodes.fetch_flights import fetch_flights
 from src.flight_agent.nodes.nodes import evaluate_rules, decision_router, store_snapshot, store_decisions, send_alert
+from src.flight_agent.nodes.claude_analysis import claude_analysis
 
 def build_graph():
     graph = StateGraph(FlightMonitorState)
@@ -12,6 +13,7 @@ def build_graph():
     graph.add_node("snapshot", store_snapshot)
     graph.add_node("evaluate", evaluate_rules)
     graph.add_node("router", decision_router)
+    graph.add_node("claude", claude_analysis)
     graph.add_node("decisions", store_decisions)
     graph.add_node("alert", send_alert)
 
@@ -19,7 +21,8 @@ def build_graph():
     graph.add_edge("fetch", "snapshot")
     graph.add_edge("snapshot", "evaluate")
     graph.add_edge("evaluate", "router")
-    graph.add_edge("router", "decisions")
+    graph.add_edge("router", "claude")
+    graph.add_edge("claude", "decisions")
     graph.add_edge("decisions", "alert")
     graph.add_edge("alert", END)
 
