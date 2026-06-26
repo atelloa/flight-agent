@@ -1,7 +1,7 @@
 import requests
 from datetime import datetime
-from config import SERP_API_KEY
-from state import Flight, FlightMonitorState
+from src.flight_agent.tools.config import SERP_API_KEY
+from src.flight_agent.state import Flight, FlightMonitorState
 
 
 def parsear_resultado(resultado: dict, route: str) -> Flight:

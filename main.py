@@ -1,5 +1,5 @@
-from state import FlightMonitorState
-from graph import compiled_graph
+from src.flight_agent.state import FlightMonitorState
+from src.flight_agent.graph import compiled_graph
 
 
 state = FlightMonitorState()

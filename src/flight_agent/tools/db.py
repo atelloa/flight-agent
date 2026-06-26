@@ -1,6 +1,6 @@
 import sqlite3
 from datetime import datetime
-from state import Flight
+from src.flight_agent.state import Flight
 
 
 DB_PATH = "data/flight_agent.sqlite"

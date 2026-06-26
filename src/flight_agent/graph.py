@@ -1,9 +1,8 @@
 from langgraph.graph import StateGraph, END
-from state import FlightMonitorState
-from load_config import load_config
-from fetch_flights import fetch_flights
-from nodes import evaluate_rules, decision_router, store_snapshot, store_decisions, send_alert
-
+from src.flight_agent.state import FlightMonitorState
+from src.flight_agent.nodes.load_config import load_config
+from src.flight_agent.nodes.fetch_flights import fetch_flights
+from src.flight_agent.nodes.nodes import evaluate_rules, decision_router, store_snapshot, store_decisions, send_alert
 
 def build_graph():
     graph = StateGraph(FlightMonitorState)

@@ -1,6 +1,6 @@
 import yaml
 from datetime import datetime
-from state import FlightMonitorState
+from src.flight_agent.state import FlightMonitorState
 
 
 def load_config(state: FlightMonitorState) -> FlightMonitorState:

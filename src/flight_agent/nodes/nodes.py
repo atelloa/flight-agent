@@ -1,5 +1,5 @@
-from state import FlightMonitorState
-from db import create_tables, save_flights, save_decisions
+from src.flight_agent.state import FlightMonitorState
+from src.flight_agent.tools.db import create_tables, save_flights, save_decisions, save_review_queue
 from datetime import datetime
 
 
@@ -112,8 +112,8 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
     Escribe: Telegram + SQLite review_queue (si review_mode=True)
     """
     import requests
-    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-    from db import save_review_queue
+    from src.flight_agent.tools.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    from src.flight_agent.tools.db import save_review_queue
     from datetime import datetime
 
     print("\n[NODE] send_alert: enviando alertas...")
