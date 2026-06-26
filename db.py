@@ -37,6 +37,20 @@ def create_tables():
             decided_at  TEXT
         )
     """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS review_queue (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        flight_id   TEXT,
+        flight_number TEXT,
+        route       TEXT,
+        price       REAL,
+        airline     TEXT,
+        stops       INTEGER,
+        motivo      TEXT,
+        estado      TEXT DEFAULT 'pendiente',
+        created_at  TEXT
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -92,3 +106,38 @@ def get_price_history(route: str) -> list:
     """, (route,)).fetchall()
     conn.close()
     return [{"price": r["price"], "searched_at": r["searched_at"]} for r in rows]
+
+def save_review_queue(alerts: list, created_at: datetime):
+    """Guarda vuelos que necesitan revision humana"""
+    conn = get_connection()
+    for alerta in alerts:
+        vuelo = alerta["vuelo"]
+        conn.execute("""
+            INSERT INTO review_queue 
+            (flight_id, flight_number, route, price, airline, stops, motivo, estado, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
+        """, (
+            vuelo.id,
+            vuelo.flight_number,
+            vuelo.route,
+            vuelo.price,
+            vuelo.airline,
+            vuelo.stops,
+            alerta["mensaje"],
+            str(created_at),
+        ))
+    conn.commit()
+    conn.close()
+
+
+def get_review_queue() -> list:
+    """Lee vuelos pendientes de revision humana"""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT *
+        FROM review_queue
+        WHERE estado = 'pendiente'
+        ORDER BY created_at DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

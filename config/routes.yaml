@@ -8,12 +8,13 @@ routes:
     max_stops: 2
     date: "2026-11-23"
   MCO-LIM:
-    max_price: 600
+    max_price: 500
     max_stops: 2
-    date: "2026-11-29"
+    date: "2026-11-30"
 
 global:
   date_range: 2
   thanksgiving_window:
     start: "2026-11-23"
     end: "2026-11-29"
+  review_mode: true    # true = separa clear_deal y review / false = envía todo

@@ -6,7 +6,7 @@ from state import FlightMonitorState
 def load_config(state: FlightMonitorState) -> FlightMonitorState:
     """
     NODE: Carga configuracion desde config/routes.yaml.
-    
+
     Lee: config/routes.yaml
     Escribe: state.routes_config y state.global_config
     """
@@ -28,6 +28,8 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
 
     # Cargar config global
     state.global_config["date_range"] = config["global"]["date_range"]
+    state.global_config["review_mode"] = config["global"]["review_mode"]
 
     print(f"  Rutas cargadas: {list(state.routes_config.keys())}")
+    print(f"  Review mode: {state.global_config['review_mode']}")
     return state

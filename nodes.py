@@ -104,21 +104,36 @@ def store_decisions(state: FlightMonitorState) -> FlightMonitorState:
     return state
 def send_alert(state: FlightMonitorState) -> FlightMonitorState:
     """
-    NODE: Envia alertas por Telegram para vuelos clear_deal.
+    NODE: Envia alertas por Telegram.
+    Si review_mode=True: solo envia clear_deal, guarda review en SQLite.
+    Si review_mode=False: envia todo por Telegram.
 
-    Lee: state.alerts_to_send
-    Escribe: Telegram (mensaje al usuario)
+    Lee: state.alerts_to_send y state.global_config
+    Escribe: Telegram + SQLite review_queue (si review_mode=True)
     """
     import requests
     from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    from db import save_review_queue
+    from datetime import datetime
 
     print("\n[NODE] send_alert: enviando alertas...")
+
+    review_mode = state.global_config.get("review_mode", False)
 
     clear_deals = [a for a in state.alerts_to_send if a["tipo"] == "clear_deal"]
     reviews = [a for a in state.alerts_to_send if a["tipo"] == "review"]
 
-    if not clear_deals and not reviews:
-        print("  Sin alertas para enviar")
+    # Manejar reviews segun review_mode
+    if review_mode and reviews:
+        save_review_queue(reviews, datetime.now())
+        print(f"  {len(reviews)} casos guardados en review_queue")
+        reviews_telegram = []  # no enviar por Telegram
+    else:
+        reviews_telegram = reviews  # enviar por Telegram
+
+    # Si no hay nada que enviar
+    if not clear_deals and not reviews_telegram:
+        print("  Sin alertas para enviar a Telegram")
         return state
 
     # Construir mensaje
@@ -130,9 +145,9 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
             v = alerta["vuelo"]
             mensaje += f"  {v.flight_number} | {v.route} | ${v.price} | {v.stops} escalas | {v.airline}\n"
 
-    if reviews:
+    if reviews_telegram:
         mensaje += "\n❌ *VUELOS FUERA DEL PRESUPUESTO:*\n"
-        for alerta in reviews:
+        for alerta in reviews_telegram:
             v = alerta["vuelo"]
             mensaje += f"  {v.flight_number} | {v.route} | ${v.price} | {v.stops} escalas | {v.airline}\n"
 

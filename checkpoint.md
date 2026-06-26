@@ -58,7 +58,7 @@
 
 Phase 1: COMPLETA
 Phase 2: COMPLETA
-Phase 3: SIGUIENTE
+Phase 3: COMPLETA
 Phase 4: PENDIENTE
 Phase 5: PENDIENTE
 Phase 6: PENDIENTE
@@ -90,7 +90,7 @@ data/flight_agent.sqlite  base de datos
 
 Phase 1: COMPLETA - MVP local con consola
 Phase 2: COMPLETA - Persistencia SQLite
-Phase 3: SIGUIENTE - Real alerts (email o Telegram)
+Phase 3: COMPLETA - Real alerts (email o Telegram)
 Phase 4: PENDIENTE - Manual review queue
 Phase 5: PENDIENTE - LLM-assisted explanations (Claude subgraph)
 Phase 6: PENDIENTE - Better logging and traces
