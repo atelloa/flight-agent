@@ -2,171 +2,248 @@
 
 ## 1. Purpose
 
-`flight-agent` is a Python agent that monitors flight prices for a Thanksgiving 2026 family trip.
+`flight-agent` is a Python agent that monitors flight prices for a family trip around Thanksgiving 2026.
 
-Routes:
+Current monitored routes:
 
-- LIM -> MAD (Nov 15, 2026)
-- MAD -> MCO (Nov 23, 2026 - Thanksgiving window)
-- MCO -> LIM (Nov 29, 2026)
+```text
+LIM -> MAD
+MAD -> MCO
+MCO -> LIM
+```
 
-The agent searches flights with SerpAPI, stores prices in SQLite, compares them with history, evaluates rules, and decides one of three outcomes:
-
-* **Alert**
-* **Review**
-* **End**
+The goal of this project is not only to monitor flights, but to learn how to design, document and reason about an AI agent architecture in a simple, inspectable way.
 
 ---
 
-## 2. Framework & Stack
+## 2. Architectural Pattern
 
-| Component     | Role                                               |
-| ------------- | -------------------------------------------------- |
-| ReAct Pattern | Makes each step explainable: Think → Act → Observe |
-| LangGraph     | Orchestrates the workflow as a graph               |
-| SerpAPI       | Provides flight search results                     |
-| SQLite        | Stores price history                               |
-| Mermaid       | Documents the architecture visually                |
-| Markdown      | Keeps documentation simple and readable            |
+The project follows an **Enterprise Agentic Workflow**:
 
-This document describes architecture, not implementation.
+```text
+rules first, LLM only when useful
+```
 
-Pattern used: Enterprise Agentic Workflow (Event-driven state machine with bounded agentic subgraphs).
+The normal flow is deterministic:
 
-Rule: Code handles the normal process. Rules handle objective decisions. Claude reasons about ambiguous cases. LangGraph orchestrates state, branches, loops and persistence.
+```text
+load config
+fetch flights
+evaluate rules
+route decisions
+store results
+notify if needed
+```
+
+Claude is bounded. It does not control the whole process. It only analyzes cases marked as ambiguous by the router.
+
+This keeps the agent:
+
+```text
+cheaper
+more stable
+more auditable
+easier to debug
+```
 
 ---
 
-## 3. High-Level Architecture
-
-### System Context (full system)
+## 3. High-Level Flow
 
 ```mermaid
 flowchart TD
-    U[User - Frontend] -->|configures routes and filters| B[Backend API - Phase 7]
-    B -->|stores config| DB[(SQLite)]
-    DB -->|reads config| A[flight-agent]
-    A -->|searches| S[SerpAPI]
-    A -->|stores history| DB
-    A -->|sends| N[Notifications - Email / Telegram]
-    N -->|alerts| U
-```
-### Agent Flow (internal)
-
-```mermaid
-flowchart LR
     A[Load Config] --> B[Fetch Flights]
-    B --> C[Store]
-    C --> D[Compare]
-    D --> E[Evaluate]
-    E --> F[Router]
-    F -->|Good flight| G[Alert]
-    F -->|Unclear case| H[Review]
-    F -->|No action| I[End]
+    B --> C[Store Snapshot]
+    C --> D[Evaluate Rules]
+    D --> E[Decision Router]
+    E --> F[Claude Analysis]
+    F --> G[Store Decisions]
+    G --> H[Send Alert]
+    H --> I[END]
+
+    B -. fetch_mode live .-> S[SerpAPI]
+    B -. fetch_mode cached .-> DB[(SQLite Cache)]
+    F -. claude_mode live .-> L[Claude API]
+    F -. claude_mode mock .-> M[Mock Decision]
+    H -. telegram_enabled true .-> T[Telegram]
+    H -. telegram_enabled false .-> N[No external message]
 ```
 
-The basic flow is:
-
-1. Load monitoring rules.
-2. Search current flights.
-3. Store the result.
-4. Compare against historical prices.
-5. Evaluate rules.
-6. Route to Alert, Review, or End.
+Important detail: `claude_analysis` is currently always present in the graph, but it only processes alerts with `tipo = ambiguous`. If there are no ambiguous cases, it exits without calling Claude.
 
 ---
 
-## 4. State Definition
+## 4. Main Runtime Modes
 
-`FlightMonitorState` is the shared context of one agent run.
+The system can run in different modes using `config/routes.yaml`.
 
-It should contain:
+```yaml
+global:
+  review_mode: true
+  fetch_mode: "cached"
+  claude_mode: "mock"
+  telegram_enabled: false
+```
 
-| State Area   | Examples                                                |
-| ------------ | ------------------------------------------------------- |
-| Config       | routes, max price, max stops, travel window             |
-| Current data | fetched flights, normalized flights                     |
-| History      | previous prices, historical average, historical minimum |
-| Evaluation   | passed rules, failed rules, candidates                  |
-| Routing      | decision, reason                                        |
-| Output       | alert message or review item                            |
+| Setting | Production-like value | Lab value | Purpose |
+|---|---|---|---|
+| `fetch_mode` | `live` | `cached` | Control SerpAPI usage |
+| `claude_mode` | `live` | `mock` | Control Claude usage |
+| `telegram_enabled` | `true` | `false` | Control external notifications |
+| `review_mode` | `true` | `true` | Keep human review for uncertain cases |
 
-The state is important because it makes the agent traceable.
+Recommended lab mode:
 
-A good final decision should be explainable from the state.
+```text
+fetch_mode: cached
+claude_mode: mock
+telegram_enabled: false
+```
 
----
-
-## 5. Node-by-Node Breakdown
-
-| Node          | Think                            | Act                                | Observe                          |
-| ------------- | -------------------------------- | ---------------------------------- | -------------------------------- |
-| Load Config   | What should be monitored?        | Load routes and rules              | Config is available in state     |
-| Fetch Flights | What flights exist now?          | Call SerpAPI                       | Current flight data is available |
-| Store         | What should be saved?            | Persist snapshot in SQLite         | Price history is updated         |
-| Compare       | Is this price good historically? | Compare current vs previous prices | Price differences are known      |
-| Evaluate      | Does it satisfy the rules?       | Apply max price and max stops      | Candidates are identified        |
-| Router        | What should happen next?         | Choose Alert, Review, or End       | Decision is stored               |
-| Alert         | Is this clearly worth attention? | Prepare/send alert                 | Alert output is created          |
-| Review        | Is this ambiguous?               | Create review item                 | Human review output is created   |
+This allows testing the full pipeline without spending SerpAPI, without spending Claude, and without sending Telegram messages.
 
 ---
 
-## 6. Tool Calling
+## 5. State vs Persistence
 
-Tools are executable capabilities used by nodes.
+The architecture separates temporary state from permanent memory.
 
-| Tool               | Used By       | Purpose                        |
-| ------------------ | ------------- | ------------------------------ |
-| Flight Search Tool | Fetch Flights | Search flights through SerpAPI |
-| Persistence Tool   | Store         | Save observations in SQLite    |
-| History Tool       | Compare       | Read previous prices           |
-| Rule Tool          | Evaluate      | Check max price and max stops  |
-| Notification Tool  | Alert         | Send or prepare alerts         |
-| Review Tool        | Review        | Create manual review items     |
+### Temporary state
 
-Simple rule:
+`FlightMonitorState` is the live working memory of one run.
 
-> Nodes organize the workflow. Tools do the work.
+Examples:
 
----
+```text
+latest_offers
+rule_matches
+suspicious_cases
+alerts_to_send
+global_config
+```
 
-## 7. LangGraph Orchestration
+It lives in RAM and disappears when the program finishes.
 
-LangGraph controls the flow between nodes.
+### Permanent persistence
 
-It is responsible for:
+SQLite stores data that must survive across runs.
 
-* running nodes in order
-* passing state between nodes
-* routing conditionally after evaluation
-* ending the run correctly
+Examples:
 
-LangGraph does not decide whether a flight is good.
+```text
+flights
+decisions
+review_queue
+```
 
-That decision comes from:
-
-* configured rules
-* historical comparison
-* evaluation results
-* routing logic
-
-The main routing point is:
-
-| Evaluation Result       | Next Step |
-| ----------------------- | --------- |
-| Clearly good flight     | Alert     |
-| Promising but uncertain | Review    |
-| Not useful              | End       |
+SQLite is also used as a simple local cache by reading the latest flight snapshot.
 
 ---
 
-## 8. File Structure
+## 6. Snapshot and Cache
+
+A snapshot is the set of flights found in one run.
+
+In live mode:
+
+```text
+SerpAPI -> Flight objects -> state.latest_offers -> SQLite snapshot
+```
+
+In cached mode:
+
+```text
+SQLite latest snapshot -> Flight objects -> state.latest_offers
+```
+
+This design keeps the rest of the graph independent from the source of data.
+
+`evaluate_rules`, `decision_router` and `claude_analysis` always read from state. They do not care whether the data came from SerpAPI or SQLite.
+
+---
+
+## 7. Main Components
+
+| Component | Responsibility |
+|---|---|
+| `state.py` | Defines the temporary state and `Flight` model |
+| `graph.py` | Connects nodes using LangGraph |
+| `nodes/load_config.py` | Loads YAML configuration into state |
+| `nodes/fetch_flights.py` | Loads flights from SerpAPI or SQLite cache |
+| `nodes/nodes.py` | Stores snapshots, evaluates rules, routes decisions and sends alerts |
+| `nodes/claude_analysis.py` | Uses Claude or mock mode for ambiguous cases |
+| `tools/claude_tool.py` | Calls Claude API and parses structured output |
+| `persistence/db.py` | Encapsulates SQLite persistence |
+| `config/routes.yaml` | Single source of truth for routes and runtime modes |
+
+---
+
+## 8. Tools vs Persistence
+
+The project separates agentic tools from persistence.
+
+```text
+tools/
+  external capabilities used by nodes
+  examples: Claude, SerpAPI, Telegram
+
+persistence/
+  permanent memory and data access
+  examples: SQLite, snapshots, price history, review queue
+```
+
+`db.py` belongs conceptually to `persistence/` because it is not a tool chosen by the LLM. It is the data access layer of the system.
+
+A more enterprise naming would be:
+
+```text
+Persistence Adapter
+Repository Layer
+Data Access Layer
+```
+
+For this lab, `persistence/db.py` is enough. If the project grows, it can be split later into repositories.
+
+---
+
+## 9. Decision Flow
+
+The router classifies flights into three initial categories:
+
+```text
+clear_deal
+ambiguous
+review
+```
+
+Then Claude can transform ambiguous cases into:
+
+```text
+alert
+ignore
+recheck
+needs_review
+```
+
+Operational meaning:
+
+| Decision | Meaning |
+|---|---|
+| `clear_deal` | Deterministic good deal from rules |
+| `alert` | Claude recommends notifying |
+| `review` | Hard rule says manual review |
+| `needs_review` | Claude recommends human review |
+| `recheck` | Candidate should be monitored again |
+| `ignore` | Not worth action now |
+
+---
+
+## 10. Current File Structure
 
 ```text
 flight-agent/
-├── ARCHITECTURE.md
-├── README.md
+├── architecture.md
+├── checkpoint.md
 ├── config/
 │   └── routes.yaml
 ├── data/
@@ -176,120 +253,49 @@ flight-agent/
 │       ├── graph.py
 │       ├── state.py
 │       ├── nodes/
+│       │   ├── load_config.py
+│       │   ├── fetch_flights.py
+│       │   ├── claude_analysis.py
+│       │   └── nodes.py
 │       ├── tools/
-│       └── observability/
-└── tests/
+│       │   └── claude_tool.py
+│       └── persistence/
+│           └── db.py
+└── main.py
 ```
 
-Purpose:
+---
 
-| Folder           | Purpose                      |
-| ---------------- | ---------------------------- |
-| `config/`        | Route and rule configuration |
-| `data/`          | SQLite database              |
-| `nodes/`         | Workflow steps               |
-| `tools/`         | Reusable capabilities        |
-| `observability/` | Logs and traces              |
-| `tests/`         | Rule and workflow validation |
+## 11. Architecture Principles
 
-Note: MVP uses flat file structure. Will migrate to this structure in Phase 6.
-
-Purpose:
-
-| Folder            | Purpose                      |
-| ----------------- | ---------------------------- |
-| `config/`         | Route and rule configuration |
-| `data/`           | SQLite database              |
-| `nodes/`          | Workflow steps               |
-| `tools/`          | Reusable capabilities        |
-| `observability/`  | Logs and traces              |
-| `tests/`          | Rule and workflow validation |
+1. Keep the normal workflow deterministic.
+2. Use Claude only for ambiguous reasoning.
+3. Keep state temporary and persistence permanent.
+4. Keep external effects controllable by config.
+5. Avoid spending APIs during local lab runs.
+6. Keep documentation didactic, not exhaustive.
+7. Refactor structure only when it clarifies architecture.
 
 ---
 
-## 9. Data Flow Example
+## 12. Next Architectural Step
 
-Example route:
+Phase 6 should focus on observability:
 
-`LIM → MAD`
+```text
+run_id
+node-level logs
+execution timing
+external call counts
+errors by node
+traceable decisions
+```
 
-Flow:
+A later improvement is to replace the current always-connected `claude_analysis` node with a true conditional LangGraph branch:
 
-1. Config says max price is `1200 USD` and max stops is `1`.
-2. SerpAPI finds a flight for `870 USD` with `1 stop`.
-3. SQLite stores the observation.
-4. The agent compares it with history.
-5. Historical minimum was `940 USD`.
-6. The flight passes price and stop rules.
-7. Router chooses `Alert`.
-8. The agent prepares an alert explaining why.
+```text
+if ambiguous cases exist -> claude_analysis
+else -> store_decisions
+```
 
----
-
-## 10. ReAct Transparency Example
-
-Scenario:
-
-| Field              | Value     |
-| ------------------ | --------- |
-| Route              | LIM → MAD |
-| Current price      | 870 USD   |
-| Max price          | 1200 USD  |
-| Stops              | 1         |
-| Max stops          | 1         |
-| Historical minimum | 940 USD   |
-
-ReAct explanation:
-
-| Step    | Explanation                                                    |
-| ------- | -------------------------------------------------------------- |
-| Think   | The flight is on a monitored route and may be a good deal      |
-| Act     | Compare price, stops, and historical data                      |
-| Observe | It is cheaper than the historical minimum and passes the rules |
-
-Final reason:
-
-> Alert triggered because `LIM → MAD` was found at `870 USD`, below the max price of `1200 USD`, within the stop limit, and cheaper than the previous historical minimum of `940 USD`.
-
----
-
-## 11. Next Phases
-
-| Phase   | Goal                          | Layer               |
-| ------- | ----------------------------- | ------------------- |
-| Phase 1 | Local agent with console output | Agent             |
-| Phase 2 | Scheduled monitoring          | Agent               |
-| Phase 3 | Real alerts                   | Notifications       |
-| Phase 4 | Manual review queue           | Agent + SQLite      |
-| Phase 5 | LLM-assisted explanations     | Agent (Claude)      |
-| Phase 6 | Better logging and traces     | Agent + SQLite      |
-| Phase 7 | User configuration interface  | Frontend + Backend API |
-
-Note: Backend API appears in Phase 7 only. Phases 1-6 use SQLite internally without exposing an external API.
-
----
-
-## 12. Architecture Principles
-
-1. Keep hard rules deterministic.
-2. Use the LLM for explanation, not hidden control.
-3. Keep nodes small.
-4. Keep tools reusable.
-5. Make every decision traceable.
-6. Keep architecture documentation separate from implementation details.
-
----
-
-## Summary
-
-`flight-agent` is a stateful flight monitoring agent.
-
-Core pattern:
-
-`State + Nodes + Tools + Router`
-
-Core flow:
-
-`Load Config → Fetch Flights → Store → Compare → Evaluate → Router → Alert / Review / End`
-
-The first version should stay simple, deterministic, and easy to inspect.
+For now, the current implementation is valid for learning because the node itself skips work when there are no ambiguous cases.
