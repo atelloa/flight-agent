@@ -141,3 +141,39 @@ def get_review_queue() -> list:
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_latest_flights_snapshot() -> list:
+    """Lee los vuelos del ultimo snapshot guardado"""
+    conn = get_connection()
+
+    last_snapshot = conn.execute("""
+        SELECT searched_at
+        FROM flights
+        ORDER BY searched_at DESC
+        LIMIT 1
+    """).fetchone()
+
+    if not last_snapshot:
+        conn.close()
+        return []
+
+    rows = conn.execute("""
+        SELECT id, flight_number, route, price, date, airline, stops
+        FROM flights
+        WHERE searched_at = ?
+    """, (last_snapshot["searched_at"],)).fetchall()
+
+    conn.close()
+
+    return [
+        Flight(
+            id=row["id"],
+            flight_number=row["flight_number"],
+            route=row["route"],
+            price=row["price"],
+            date=datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
+            airline=row["airline"],
+            stops=row["stops"],
+        )
+        for row in rows
+    ]

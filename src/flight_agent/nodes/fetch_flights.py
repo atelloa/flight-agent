@@ -2,6 +2,7 @@ import requests
 from datetime import datetime
 from src.flight_agent.tools.config import SERP_API_KEY
 from src.flight_agent.state import Flight, FlightMonitorState
+from src.flight_agent.persistence.db import get_latest_flights_snapshot
 
 
 def parsear_resultado(resultado: dict, route: str) -> Flight:
@@ -78,6 +79,16 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     Escribe: state.latest_offers
     """
     print("\n[NODE] fetch_flights: buscando vuelos...")
+
+    fetch_mode = state.global_config.get("fetch_mode", "live")
+    print(f"  Fetch mode activo: {fetch_mode}")
+
+    if fetch_mode == "cached":
+        vuelos = get_latest_flights_snapshot()
+        state.latest_offers.extend(vuelos)
+
+        print(f"  [CACHE] Vuelos cargados desde SQLite: {len(vuelos)}")
+        return state
 
     dates = state.global_config.get("preferred_dates", {})
     date_range = state.global_config.get("date_range", 0)

@@ -1,6 +1,6 @@
 import json
 import anthropic
-from src.flight_agent.tools.db import get_price_history
+from src.flight_agent.persistence.db import get_price_history
 
 client = anthropic.Anthropic()
 

@@ -1,6 +1,6 @@
 from src.flight_agent.state import FlightMonitorState
 from src.flight_agent.tools.claude_tool import analizar_con_claude
-from src.flight_agent.tools.db import get_price_history
+from src.flight_agent.persistence.db import get_price_history
 
 
 def claude_analysis(state: FlightMonitorState) -> FlightMonitorState:
@@ -12,6 +12,9 @@ def claude_analysis(state: FlightMonitorState) -> FlightMonitorState:
              agrega claude_confidence, claude_reason, claude_risk_flags
     """
     print("\n[NODE] claude_analysis: analizando casos ambiguos...")
+
+    claude_mode = state.global_config.get("claude_mode", "live")
+    print(f"  Claude mode activo: {claude_mode}")
 
     ambiguos = [a for a in state.alerts_to_send if a["tipo"] == "ambiguous"]
 
@@ -28,11 +31,19 @@ def claude_analysis(state: FlightMonitorState) -> FlightMonitorState:
         vuelo = alerta["vuelo"]
         config = state.routes_config.get(vuelo.route, {})
         max_price = config.get("max_price", 0)
-        historial = get_price_history(vuelo.route)
 
-        print(f"  Analizando {vuelo.flight_number} ({vuelo.route}) a ${vuelo.price}...")
+        print(f"  Analizando {vuelo.flight_number} ({vuelo.route}) {vuelo.date} a ${vuelo.price}...")
 
-        resultado = analizar_con_claude(vuelo, max_price, historial)
+        if claude_mode == "mock":
+            resultado = {
+                "decision": "needs_review",
+                "confidence": 0.5,
+                "reason": "[MOCK] Claude no fue llamado. Respuesta simulada para laboratorio.",
+                "risk_flags": ["mock_mode"]
+            }
+        else:
+            historial = get_price_history(vuelo.route)
+            resultado = analizar_con_claude(vuelo, max_price, historial)
 
         alerta["tipo"] = resultado["decision"]
         alerta["claude_confidence"] = resultado["confidence"]

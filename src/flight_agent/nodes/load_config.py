@@ -1,3 +1,4 @@
+from panel import state
 import yaml
 from datetime import datetime
 from src.flight_agent.state import FlightMonitorState
@@ -29,7 +30,13 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     # Cargar config global
     state.global_config["date_range"] = config["global"]["date_range"]
     state.global_config["review_mode"] = config["global"]["review_mode"]
+    state.global_config["fetch_mode"] = config["global"].get("fetch_mode", "live")
+    state.global_config["claude_mode"] = config["global"].get("claude_mode", "live")
+    state.global_config["telegram_enabled"] = config["global"].get("telegram_enabled", True)
 
     print(f"  Rutas cargadas: {list(state.routes_config.keys())}")
     print(f"  Review mode: {state.global_config['review_mode']}")
+    print(f"  Fetch mode: {state.global_config['fetch_mode']}")
+    print(f"  Claude mode: {state.global_config['claude_mode']}")
+    print(f"  Telegram enabled: {state.global_config['telegram_enabled']}")
     return state

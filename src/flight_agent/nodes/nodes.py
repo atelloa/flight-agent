@@ -1,5 +1,5 @@
 from src.flight_agent.state import FlightMonitorState
-from src.flight_agent.tools.db import create_tables, save_flights, save_decisions, save_review_queue
+from src.flight_agent.persistence.db import create_tables, save_flights, save_decisions, save_review_queue
 from datetime import datetime
 
 
@@ -102,6 +102,12 @@ def store_snapshot(state: FlightMonitorState) -> FlightMonitorState:
     """
     print("\n[NODE] store_snapshot: guardando en SQLite...")
 
+    fetch_mode = state.global_config.get("fetch_mode", "live")
+
+    if fetch_mode == "cached":
+        print("  [CACHE] Snapshot no guardado porque los vuelos vienen de SQLite")
+        return state
+
     create_tables()
 
     now = datetime.now()
@@ -138,15 +144,29 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
     """
     import requests
     from src.flight_agent.tools.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-    from src.flight_agent.tools.db import save_review_queue
+    from src.flight_agent.persistence.db import save_review_queue
     from datetime import datetime
 
     print("\n[NODE] send_alert: enviando alertas...")
 
+    telegram_enabled = state.global_config.get("telegram_enabled", True)
+    print(f"  Telegram enabled: {telegram_enabled}")
+
+    if not telegram_enabled:
+        print("  [TELEGRAM] Envio desactivado por configuracion")
+        return state
+
     review_mode = state.global_config.get("review_mode", False)
 
-    clear_deals = [a for a in state.alerts_to_send if a["tipo"] == "clear_deal"]
-    reviews = [a for a in state.alerts_to_send if a["tipo"] == "review"]
+    clear_deals = [
+        a for a in state.alerts_to_send
+        if a["tipo"] in ["clear_deal", "alert"]
+    ]
+
+    reviews = [
+        a for a in state.alerts_to_send
+        if a["tipo"] in ["review", "needs_review", "recheck"]
+    ]
 
     # Manejar reviews segun review_mode
     if review_mode and reviews:

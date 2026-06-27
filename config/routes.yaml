@@ -18,3 +18,6 @@ global:
     start: "2026-11-23"
     end: "2026-11-29"
   review_mode: true    # true = separa clear_deal y review / false = envía todo
+  fetch_mode: "cached"
+  claude_mode: "mock"
+  telegram_enabled: false
