@@ -38,18 +38,34 @@ def create_tables():
         )
     """)
     conn.execute("""
-    CREATE TABLE IF NOT EXISTS review_queue (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        flight_id   TEXT,
-        flight_number TEXT,
-        route       TEXT,
-        price       REAL,
-        airline     TEXT,
-        stops       INTEGER,
-        motivo      TEXT,
-        estado      TEXT DEFAULT 'pendiente',
-        created_at  TEXT
-    )
+        CREATE TABLE IF NOT EXISTS review_queue (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            flight_id   TEXT,
+            flight_number TEXT,
+            route       TEXT,
+            price       REAL,
+            airline     TEXT,
+            stops       INTEGER,
+            motivo      TEXT,
+            estado      TEXT DEFAULT 'pendiente',
+            created_at  TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL UNIQUE,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            duration_seconds REAL,
+            fetch_mode TEXT,
+            claude_mode TEXT,
+            telegram_enabled INTEGER,
+            flights_found INTEGER DEFAULT 0,
+            alerts_generated INTEGER DEFAULT 0,
+            error_message TEXT
+        )
     """)
     conn.commit()
     conn.close()
