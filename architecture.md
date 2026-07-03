@@ -52,49 +52,51 @@ easier to debug
 
 ```mermaid
 flowchart TD
-    A[Load Config] --> B[Fetch Flights]
-    B --> C[Store Snapshot]
-    C --> D[Evaluate Rules]
-    D --> E[Decision Router]
-    E --> F[Claude Analysis]
-    F --> G[Store Decisions]
-    G --> H[Send Alert]
-    H --> I[END]
+    A["NODE<br/>Load Config"] --> B["NODE<br/>Fetch Flights"]
+    B --> C["NODE<br/>Store Snapshot"]
+    C --> D["NODE<br/>Evaluate Rules"]
+    D --> E["NODE<br/>Decision Router"]
+    E --> F["NODE<br/>Claude Analysis"]
+    F --> G["NODE<br/>Store Decisions"]
+    G --> H["NODE<br/>Send Alert"]
+    H --> I["END"]
 
-    CFG[[config/routes.yaml]] -. runtime modes .-> A
-    ST[(FlightMonitorState)] -. shared runtime state .-> B
-    B -. fetch_mode live .-> S[SerpAPI]
-    B -. fetch_mode cached .-> DB[(SQLite Cache)]
-    F -. claude_mode live .-> L[Claude API]
-    F -. claude_mode mock .-> M[Mock Decision]
-    H -. telegram_enabled true .-> T[Telegram]
-    H -. telegram_enabled false .-> N[No external message]
+    CFG[["CONFIG<br/>config/routes.yaml"]] -. runtime modes .-> A
+    ST[("STATE<br/>FlightMonitorState")] -. shared runtime state .-> B
+    B -. fetch_mode live .-> S["TOOL<br/>SerpAPI"]
+    B -. fetch_mode cached .-> DB[("PERSISTENCE<br/>SQLite Cache")]
+    F -. claude_mode live .-> L["TOOL<br/>Claude API"]
+    F -. claude_mode mock .-> M["TOOL<br/>Mock Decision"]
+    H -. telegram_enabled true .-> T["OUTPUT<br/>Telegram"]
+    H -. telegram_enabled false .-> N["OUTPUT<br/>No external message"]
 
-    classDef node fill:#E3F2FD,stroke:#1565C0,color:#0D47A1;
-    classDef tool fill:#FFF3E0,stroke:#EF6C00,color:#E65100;
-    classDef persistence fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20;
-    classDef state fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C;
-    classDef output fill:#FCE4EC,stroke:#C2185B,color:#880E4F;
+    classDef node fill:#DCEBFF,stroke:#005AB5,color:#002F6C;
+    classDef tool fill:#FFE8CC,stroke:#D55E00,color:#7A2E00;
+    classDef persistence fill:#DFF5EA,stroke:#007A4D,color:#004D31;
+    classDef runtime fill:#FFF4B8,stroke:#8A6D00,color:#4D3D00;
+    classDef output fill:#FADBD8,stroke:#C0392B,color:#641E16;
     classDef terminal fill:#ECEFF1,stroke:#455A64,color:#263238;
 
     class A,B,C,D,E,F,G,H node;
     class S,L,M tool;
     class DB persistence;
-    class CFG,ST state;
+    class CFG,ST runtime;
     class T,N output;
     class I terminal;
 ```
 
+Accessibility note: the diagram does not rely only on color. Each box also includes a component label such as `NODE`, `TOOL`, `PERSISTENCE`, `CONFIG`, `STATE` or `OUTPUT`.
+
 Diagram legend:
 
-| Color | Meaning | Examples |
+| Visual cue | Meaning | Examples |
 |---|---|---|
-| Blue | LangGraph nodes / workflow steps | `load_config`, `fetch_flights`, `claude_analysis` |
-| Orange | External tools or simulated tool behavior | SerpAPI, Claude API, mock decision |
-| Green | Persistence / durable memory | SQLite cache |
-| Purple | Runtime configuration and temporary state | `config/routes.yaml`, `FlightMonitorState` |
-| Pink | External output or skipped external output | Telegram, no external message |
-| Gray | Terminal state | END |
+| `NODE` label + blue style | LangGraph nodes / workflow steps | `load_config`, `fetch_flights`, `claude_analysis` |
+| `TOOL` label + orange style | External tools or simulated tool behavior | SerpAPI, Claude API, mock decision |
+| `PERSISTENCE` label + green style | Durable memory / data access | SQLite cache |
+| `CONFIG` / `STATE` label + yellow style | Runtime configuration and temporary state | `config/routes.yaml`, `FlightMonitorState` |
+| `OUTPUT` label + red style | External output or skipped external output | Telegram, no external message |
+| `END` label + gray style | Terminal state | END |
 
 Important detail: `claude_analysis` is currently always present in the graph, but it only processes alerts with `tipo = ambiguous`. If there are no ambiguous cases, it exits without calling Claude.
 
