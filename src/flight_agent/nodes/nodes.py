@@ -111,8 +111,6 @@ def store_snapshot(state: FlightMonitorState) -> FlightMonitorState:
         print("  [CACHE] Snapshot no guardado porque los vuelos vienen de SQLite")
         return state
 
-    create_tables()
-
     now = datetime.now()
 
     save_flights(state.latest_offers, now)

@@ -193,3 +193,51 @@ def get_latest_flights_snapshot() -> list:
         )
         for row in rows
     ]
+
+def save_agent_run(
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+    status: str,
+    duration_seconds: float,
+    fetch_mode: str = None,
+    claude_mode: str = None,
+    telegram_enabled: bool = None,
+    flights_found: int = 0,
+    alerts_generated: int = 0,
+    error_message: str = None,
+):
+    """Guarda el resumen de una ejecucion del agente"""
+    conn = get_connection()
+
+    conn.execute("""
+        INSERT INTO agent_runs (
+            run_id,
+            started_at,
+            finished_at,
+            status,
+            duration_seconds,
+            fetch_mode,
+            claude_mode,
+            telegram_enabled,
+            flights_found,
+            alerts_generated,
+            error_message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        run_id,
+        started_at,
+        finished_at,
+        status,
+        duration_seconds,
+        fetch_mode,
+        claude_mode,
+        int(telegram_enabled) if telegram_enabled is not None else None,
+        flights_found,
+        alerts_generated,
+        error_message,
+    ))
+
+    conn.commit()
+    conn.close()
