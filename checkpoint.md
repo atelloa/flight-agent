@@ -1,6 +1,6 @@
 # Checkpoint: Flight Agent MVP
 
-**Fecha:** 2026-06-27  
+**Fecha:** 2026-07-03  
 **Objetivo principal:** Aprender arquitectura de soluciones de agentes IA usando un proyecto real como laboratorio.
 
 ---
@@ -14,7 +14,7 @@
 | Phase 3 | COMPLETA | Alertas por Telegram |
 | Phase 4 | COMPLETA | Review queue manual |
 | Phase 5 | COMPLETA | Claude analiza casos ambiguos |
-| Phase 6 | PENDIENTE | Logging, trazas y observabilidad |
+| Phase 6 | EN CURSO | Observabilidad básica por consola + diseño de auditoría |
 | Phase 7 | PENDIENTE | Backend API + interfaz de usuario |
 
 ---
@@ -64,8 +64,8 @@ Guarda:
 
 ```text
 flights
- decisions
- review_queue
+decisions
+review_queue
 ```
 
 La tabla `flights` funciona también como cache mínima usando `searched_at` para identificar el último snapshot.
@@ -174,6 +174,45 @@ telegram_enabled: false
 
 Este modo permite ejecutar el pipeline completo sin gastar SerpAPI, sin gastar Claude y sin enviar Telegram.
 
+### 8. Observabilidad básica
+
+Se empezó Phase 6 agregando trazabilidad mínima por ejecución.
+
+Piezas implementadas:
+
+```text
+run_id por ejecución
+logs con timestamp humano
+logs de inicio y fin de node
+duration por node instrumentado
+duración total del workflow
+status success / failed
+helper observability/logging.py
+```
+
+Concepto aprendido:
+
+```text
+run_id = identificador de una corrida completa del agente
+```
+
+El `run_id` vive en `state` porque el state viaja por el grafo y permite que los nodes sepan a qué ejecución pertenecen.
+
+Se creó una mini capa transversal:
+
+```text
+observability/
+  logging.py
+```
+
+Regla actual:
+
+```text
+node = lógica del agente
+observability/logging.py = formato de logs + medición de tiempo
+state = transporte de datos de la corrida
+```
+
 ---
 
 ## Archivos principales
@@ -188,6 +227,7 @@ src/flight_agent/nodes/claude_analysis.py
 src/flight_agent/nodes/nodes.py
 src/flight_agent/tools/claude_tool.py
 src/flight_agent/persistence/db.py
+src/flight_agent/observability/logging.py
 data/flight_agent.sqlite
 main.py
 ```
@@ -203,6 +243,8 @@ main.py
 5. `db.py` pertenece conceptualmente a `persistence/`, no a `tools/`.
 6. Los modos `live/cached/mock` permiten separar desarrollo, pruebas y ejecución real.
 7. Las credenciales deben vivir en `.env` y `.env` no debe versionarse.
+8. Observabilidad es una preocupación transversal, por eso vive en `observability/`, no en `tools/` ni en `persistence/`.
+9. Por ahora la observabilidad es mínima y por consola; la persistencia de auditoría se diseñará aparte.
 
 ---
 
@@ -210,16 +252,150 @@ main.py
 
 ### Phase 6: Observabilidad
 
-Agregar mejor trazabilidad de ejecución:
+Phase 6 queda enfocada en estos bloques de arquitectura y diseño:
+
+#### 6.1 Run History / Audit Trail
+
+Objetivo:
+
+```text
+guardar un resumen persistente de cada ejecución del agente
+```
+
+Ejemplo de datos:
 
 ```text
 run_id
-logs por node
-tiempos por node
-conteo de vuelos por ruta
-conteo de llamadas externas
-errores controlados
+started_at
+finished_at
+status
+duration_seconds
+fetch_mode
+claude_mode
+telegram_enabled
+flights_found
+alerts_generated
+error_message
 ```
+
+Responsabilidad:
+
+```text
+agent_runs = historial auditable de corridas del agente
+```
+
+No debe guardar vuelos individuales ni decisiones detalladas.
+
+#### 6.2 Error Handling Observability
+
+Objetivo:
+
+```text
+definir qué hace el agente cuando falla una dependencia
+```
+
+Preguntas de diseño:
+
+```text
+Si falla SerpAPI, ¿paro o uso cache?
+Si falla Claude, ¿marco needs_review?
+Si falla Telegram, ¿guardo alerta pendiente?
+Si falla SQLite, ¿el flujo puede continuar?
+```
+
+Esto no es solo `try/except`; es diseño de resiliencia.
+
+#### 6.3 Decision Audit
+
+Objetivo:
+
+```text
+auditar las decisiones del agente
+```
+
+Ejemplo de datos:
+
+```text
+run_id
+flight_id
+decision: alert / ignore / recheck / needs_review
+source: rules / claude / mock
+reason
+created_at
+```
+
+Responsabilidad:
+
+```text
+explicar qué decidió el agente, por qué y en qué ejecución ocurrió
+```
+
+#### 6.4 Review Queue Observability
+
+Objetivo:
+
+```text
+conectar decisiones dudosas con revisión humana
+```
+
+Ejemplo de datos:
+
+```text
+run_id
+flight_id
+reason
+status: pending / reviewed / dismissed
+created_at
+reviewed_at
+```
+
+Patrón arquitectónico:
+
+```text
+human-in-the-loop
+```
+
+El agente no debe actuar automáticamente sobre todos los casos ambiguos.
+
+#### 6.5 Node Events
+
+Objetivo:
+
+```text
+guardar eventos detallados por node si realmente hace falta
+```
+
+Ejemplo de datos:
+
+```text
+run_id
+node_name
+event_type: start / end / error
+timestamp
+duration_seconds
+message
+```
+
+Esto se parece más a tracing detallado. No es urgente para el laboratorio.
+
+Orden recomendado:
+
+```text
+1. agent_runs
+2. errores básicos
+3. decision audit
+4. review_queue
+5. node_events si realmente hace falta
+```
+
+Regla importante:
+
+```text
+No todo print debe guardarse en SQLite.
+La base no debe convertirse en un basurero de logs.
+```
+
+---
 
 ### Mejora futura: subgrafo condicional real
 
