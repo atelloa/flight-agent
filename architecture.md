@@ -61,13 +61,40 @@ flowchart TD
     G --> H[Send Alert]
     H --> I[END]
 
+    CFG[[config/routes.yaml]] -. runtime modes .-> A
+    ST[(FlightMonitorState)] -. shared runtime state .-> B
     B -. fetch_mode live .-> S[SerpAPI]
     B -. fetch_mode cached .-> DB[(SQLite Cache)]
     F -. claude_mode live .-> L[Claude API]
     F -. claude_mode mock .-> M[Mock Decision]
     H -. telegram_enabled true .-> T[Telegram]
     H -. telegram_enabled false .-> N[No external message]
+
+    classDef node fill:#E3F2FD,stroke:#1565C0,color:#0D47A1;
+    classDef tool fill:#FFF3E0,stroke:#EF6C00,color:#E65100;
+    classDef persistence fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20;
+    classDef state fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C;
+    classDef output fill:#FCE4EC,stroke:#C2185B,color:#880E4F;
+    classDef terminal fill:#ECEFF1,stroke:#455A64,color:#263238;
+
+    class A,B,C,D,E,F,G,H node;
+    class S,L,M tool;
+    class DB persistence;
+    class CFG,ST state;
+    class T,N output;
+    class I terminal;
 ```
+
+Diagram legend:
+
+| Color | Meaning | Examples |
+|---|---|---|
+| Blue | LangGraph nodes / workflow steps | `load_config`, `fetch_flights`, `claude_analysis` |
+| Orange | External tools or simulated tool behavior | SerpAPI, Claude API, mock decision |
+| Green | Persistence / durable memory | SQLite cache |
+| Purple | Runtime configuration and temporary state | `config/routes.yaml`, `FlightMonitorState` |
+| Pink | External output or skipped external output | Telegram, no external message |
+| Gray | Terminal state | END |
 
 Important detail: `claude_analysis` is currently always present in the graph, but it only processes alerts with `tipo = ambiguous`. If there are no ambiguous cases, it exits without calling Claude.
 
