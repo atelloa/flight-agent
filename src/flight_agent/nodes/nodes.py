@@ -2,6 +2,8 @@ from src.flight_agent.state import FlightMonitorState
 from src.flight_agent.persistence.db import create_tables, save_flights, save_decisions, save_review_queue
 from datetime import datetime
 
+def now_ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def evaluate_rules(state: FlightMonitorState) -> FlightMonitorState:
     """
@@ -100,7 +102,8 @@ def store_snapshot(state: FlightMonitorState) -> FlightMonitorState:
     Lee: state.latest_offers (todos los vuelos crudos de SerpAPI)
     Escribe: SQLite tabla flights
     """
-    print("\n[NODE] store_snapshot: guardando en SQLite...")
+    print(f"\n[{now_ts()}] [RUN {state.run_id}] [NODE store_snapshot] inicio")
+    print("  Guardando snapshot...")
 
     fetch_mode = state.global_config.get("fetch_mode", "live")
 

@@ -1,9 +1,18 @@
-import requests
+from time import perf_counter
 from datetime import datetime
+
+from panel import state
 from src.flight_agent.tools.config import SERP_API_KEY
 from src.flight_agent.state import Flight, FlightMonitorState
 from src.flight_agent.persistence.db import get_latest_flights_snapshot
 
+from src.flight_agent.observability.logging import (
+    log_node_start,
+    log_node_end,
+)
+
+#def now_ts():
+#    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def parsear_resultado(resultado: dict, route: str) -> Flight:
     """
@@ -78,7 +87,11 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     Lee: state.routes_config y state.global_config
     Escribe: state.latest_offers
     """
-    print("\n[NODE] fetch_flights: buscando vuelos...")
+    start_time = log_node_start(
+        state,
+        "fetch_flights",
+        "Buscando vuelos..."
+    )
 
     fetch_mode = state.global_config.get("fetch_mode", "live")
     print(f"  Fetch mode activo: {fetch_mode}")
@@ -88,6 +101,7 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
         state.latest_offers.extend(vuelos)
 
         print(f"  [CACHE] Vuelos cargados desde SQLite: {len(vuelos)}")
+        log_node_end(state, "fetch_flights", start_time)
         return state
 
     dates = state.global_config.get("preferred_dates", {})
@@ -120,4 +134,5 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
                 print(f"    {date_str}: sin resultados")
 
     print(f"[NODE] fetch_flights: total {len(state.latest_offers)} vuelos")
+    log_node_end(state, "fetch_flights", start_time)
     return state

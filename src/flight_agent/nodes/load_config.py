@@ -3,6 +3,10 @@ import yaml
 from datetime import datetime
 from src.flight_agent.state import FlightMonitorState
 
+from src.flight_agent.observability.logging import (
+    log_node_start,
+    log_node_end,
+)
 
 def load_config(state: FlightMonitorState) -> FlightMonitorState:
     """
@@ -11,7 +15,11 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     Lee: config/routes.yaml
     Escribe: state.routes_config y state.global_config
     """
-    print("\n[NODE] load_config: cargando configuracion...")
+    start_time = log_node_start(
+        state,
+        "load_config",
+        "Cargando configuracion..."
+    )
 
     with open("config/routes.yaml", "r") as f:
         config = yaml.safe_load(f)
@@ -39,4 +47,5 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     print(f"  Fetch mode: {state.global_config['fetch_mode']}")
     print(f"  Claude mode: {state.global_config['claude_mode']}")
     print(f"  Telegram enabled: {state.global_config['telegram_enabled']}")
+    log_node_end(state, "load_config", start_time)
     return state

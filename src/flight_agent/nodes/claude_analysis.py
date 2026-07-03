@@ -1,7 +1,11 @@
+from datetime import datetime
+from time import perf_counter
 from src.flight_agent.state import FlightMonitorState
 from src.flight_agent.tools.claude_tool import analizar_con_claude
 from src.flight_agent.persistence.db import get_price_history
 
+def now_ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def claude_analysis(state: FlightMonitorState) -> FlightMonitorState:
     """
@@ -11,7 +15,8 @@ def claude_analysis(state: FlightMonitorState) -> FlightMonitorState:
     Escribe: actualiza tipo a alert/ignore/recheck/needs_review
              agrega claude_confidence, claude_reason, claude_risk_flags
     """
-    print("\n[NODE] claude_analysis: analizando casos ambiguos...")
+    print(f"\n[{now_ts()}] [RUN {state.run_id}] [NODE claude_analysis] inicio")
+    print("  Analizando casos ambiguos...")
 
     claude_mode = state.global_config.get("claude_mode", "live")
     print(f"  Claude mode activo: {claude_mode}")
