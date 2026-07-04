@@ -41,3 +41,6 @@ class FlightMonitorState:
     # Auditoria
     run_id: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
+
+    # Errores registrados durante la ejecucion
+    errors: List[Dict] = field(default_factory=list)
