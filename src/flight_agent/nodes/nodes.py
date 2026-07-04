@@ -130,7 +130,7 @@ def store_decisions(state: FlightMonitorState) -> FlightMonitorState:
     now = datetime.now()
 
     if state.alerts_to_send:
-        save_decisions(state.alerts_to_send, now)
+        save_decisions(state.alerts_to_send, now, state.run_id)
         print(f"  Guardadas: {len(state.alerts_to_send)} decisiones")
 
     return state
@@ -155,7 +155,6 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
 
     if not telegram_enabled:
         print("  [TELEGRAM] Envio desactivado por configuracion")
-        return state
 
     review_mode = state.global_config.get("review_mode", False)
 
@@ -171,7 +170,7 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
 
     # Manejar reviews segun review_mode
     if review_mode and reviews:
-        save_review_queue(reviews, datetime.now())
+        save_review_queue(reviews, datetime.now(), state.run_id)
         print(f"  {len(reviews)} casos guardados en review_queue")
         reviews_telegram = []  # no enviar por Telegram
     else:
@@ -180,6 +179,9 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
     # Si no hay nada que enviar
     if not clear_deals and not reviews_telegram:
         print("  Sin alertas para enviar a Telegram")
+        return state
+
+    if not telegram_enabled:
         return state
 
     # Construir mensaje
@@ -199,15 +201,39 @@ def send_alert(state: FlightMonitorState) -> FlightMonitorState:
 
     # Enviar a Telegram
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    response = requests.post(url, json={
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": mensaje,
-        "parse_mode": "Markdown"
-    })
 
-    if response.status_code == 200:
-        print(f"  Alerta enviada a Telegram")
-    else:
-        print(f"  Error enviando alerta: {response.text}")
+    try:
+        # Simulacion controlada para probar errores recuperables
+        # raise RuntimeError("Simulacion controlada: Telegram caido")
+        response = requests.post(url, json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": mensaje,
+            "parse_mode": "Markdown"
+        })
+
+        if response.status_code == 200:
+            print("  Alerta enviada a Telegram")
+        else:
+            error_info = {
+                "node": "send_alert",
+                "type": "telegram_http_error",
+                "message": response.text,
+                "status_code": response.status_code,
+                "created_at": str(datetime.now()),
+            }
+
+            state.errors.append(error_info)
+            print(f"  [ERROR RECUPERABLE] Telegram respondio con error: {response.text}")
+
+    except Exception as error:
+        error_info = {
+            "node": "send_alert",
+            "type": "telegram_exception",
+            "message": str(error),
+            "created_at": str(datetime.now()),
+        }
+
+        state.errors.append(error_info)
+        print(f"  [ERROR RECUPERABLE] Telegram fallo: {error}")
 
     return state

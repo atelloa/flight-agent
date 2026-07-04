@@ -1,5 +1,6 @@
 from time import perf_counter
 from datetime import datetime
+import requests
 
 from panel import state
 from src.flight_agent.tools.config import SERP_API_KEY

@@ -2,15 +2,16 @@ import sqlite3
 from datetime import datetime
 from src.flight_agent.state import Flight
 
-
 DB_PATH = "data/flight_agent.sqlite"
-
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+def column_exists(conn, table_name: str, column_name: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return any(row["name"] == column_name for row in rows)
 
 def create_tables():
     """Crea las tablas si no existen"""
@@ -37,6 +38,11 @@ def create_tables():
             decided_at  TEXT
         )
     """)
+    if not column_exists(conn, "decisions", "run_id"):
+        conn.execute("""
+            ALTER TABLE decisions
+            ADD COLUMN run_id TEXT
+        """)   
     conn.execute("""
         CREATE TABLE IF NOT EXISTS review_queue (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +57,11 @@ def create_tables():
             created_at  TEXT
         )
     """)
+    if not column_exists(conn, "review_queue", "run_id"):
+        conn.execute("""
+            ALTER TABLE review_queue
+            ADD COLUMN run_id TEXT
+        """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS agent_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +78,11 @@ def create_tables():
             error_message TEXT
         )
     """)
+    if not column_exists(conn, "agent_runs", "recoverable_errors_count"):
+        conn.execute("""
+            ALTER TABLE agent_runs
+            ADD COLUMN recoverable_errors_count INTEGER DEFAULT 0
+        """)
     conn.commit()
     conn.close()
 
@@ -91,13 +107,13 @@ def save_flights(flights: list, searched_at: datetime):
     conn.close()
 
 
-def save_decisions(alerts: list, decided_at: datetime):
+def save_decisions(alerts: list, decided_at: datetime, run_id: str = None):
     """Guarda decisiones tomadas en esta ejecucion"""
     conn = get_connection()
     for alerta in alerts:
         vuelo = alerta["vuelo"]
         conn.execute("""
-            INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             vuelo.id,
             vuelo.route,
@@ -105,6 +121,7 @@ def save_decisions(alerts: list, decided_at: datetime):
             alerta["tipo"],
             alerta["mensaje"],
             str(decided_at),
+            run_id
         ))
     conn.commit()
     conn.close()
@@ -123,15 +140,15 @@ def get_price_history(route: str) -> list:
     conn.close()
     return [{"price": r["price"], "searched_at": r["searched_at"]} for r in rows]
 
-def save_review_queue(alerts: list, created_at: datetime):
+def save_review_queue(alerts: list, created_at: datetime, run_id: str = None):
     """Guarda vuelos que necesitan revision humana"""
     conn = get_connection()
     for alerta in alerts:
         vuelo = alerta["vuelo"]
         conn.execute("""
             INSERT INTO review_queue 
-            (flight_id, flight_number, route, price, airline, stops, motivo, estado, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
+            (flight_id, flight_number, route, price, airline, stops, motivo, estado, created_at, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?)
         """, (
             vuelo.id,
             vuelo.flight_number,
@@ -141,6 +158,7 @@ def save_review_queue(alerts: list, created_at: datetime):
             vuelo.stops,
             alerta["mensaje"],
             str(created_at),
+            run_id
         ))
     conn.commit()
     conn.close()
@@ -206,6 +224,7 @@ def save_agent_run(
     flights_found: int = 0,
     alerts_generated: int = 0,
     error_message: str = None,
+    recoverable_errors_count: int = 0,
 ):
     """Guarda el resumen de una ejecucion del agente"""
     conn = get_connection()
@@ -222,9 +241,10 @@ def save_agent_run(
             telegram_enabled,
             flights_found,
             alerts_generated,
-            error_message
+            error_message,
+            recoverable_errors_count
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         run_id,
         started_at,
@@ -237,6 +257,7 @@ def save_agent_run(
         flights_found,
         alerts_generated,
         error_message,
+        recoverable_errors_count
     ))
 
     conn.commit()

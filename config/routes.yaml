@@ -18,6 +18,6 @@ global:
     start: "2026-11-23"
     end: "2026-11-29"
   review_mode: true    # true = separa clear_deal y review / false = envía todo
-  fetch_mode: "cached"
-  claude_mode: "mock"
-  telegram_enabled: false
+  fetch_mode: "live" # cached = usa cache / live = hace fetch en tiempo real
+  claude_mode: "live" # mock = usa mock / live = hace fetch en tiempo real
+  telegram_enabled: false # true = envia notificaciones a telegram / false = no envia

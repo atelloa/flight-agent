@@ -32,6 +32,10 @@ except Exception as error:
 finally:
     finished_at = datetime.now()
     run_duration = perf_counter() - run_start
+    if result:
+        recoverable_errors_count = len(result.get("errors", []))
+    else:
+        recoverable_errors_count = len(state.errors)
 
     save_agent_run(
         run_id=state.run_id,
@@ -45,6 +49,7 @@ finally:
         flights_found=len(result["latest_offers"]) if result else 0,
         alerts_generated=len(result["alerts_to_send"]) if result else 0,
         error_message=error_message,
+        recoverable_errors_count=recoverable_errors_count,
     )
 
     print(f"\n[RUN {state.run_id}] status={run_status} duracion_total={run_duration:.2f}s")
@@ -56,3 +61,10 @@ print(f"Vuelos encontrados : {len(result['latest_offers'])}")
 print(f"Validos            : {len(result['rule_matches'])}")
 print(f"Rechazados         : {len(result['suspicious_cases'])}")
 print(f"Decisiones         : {len(result['alerts_to_send'])}")
+
+print(f"Errores recuperables: {len(result['errors'])}")
+
+if result["errors"]:
+    print("\nERRORES RECUPERABLES")
+    for error in result["errors"]:
+        print(f"- [{error['node']}] {error['type']}: {error['message']}")
