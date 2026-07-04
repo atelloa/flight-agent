@@ -1,11 +1,11 @@
 # Checkpoint: Flight Agent MVP
 
-**Fecha:** 2026-07-03  
+**Fecha:** 2026-07-04  
 **Proyecto:** `flight-agent`  
 **Repo GitHub:** `atelloa/flight-agent`  
 **Archivo de continuidad:** `checkpoint.md` en la raíz del repo.
 
-Este archivo existe para poder retomar el laboratorio en un nuevo chat sin volver a explicar todo el contexto.
+Este archivo existe para retomar el laboratorio en otro chat sin volver a explicar todo el contexto.
 
 ---
 
@@ -13,7 +13,7 @@ Este archivo existe para poder retomar el laboratorio en un nuevo chat sin volve
 
 Aprender **arquitectura y diseño de agentes IA** usando un proyecto real y pequeño como laboratorio.
 
-El objetivo principal no es hacer el sistema más complejo rápido. El objetivo es entender, paso a paso, cómo se diseñan las piezas de un agente:
+El objetivo no es agregar features sin control. El objetivo es entender, paso a paso, cómo se diseñan piezas como:
 
 ```text
 state
@@ -25,15 +25,18 @@ observability
 resilience
 auditability
 human-in-the-loop
+backend API
+UI mínima
 ```
 
-Regla de trabajo:
+Reglas de trabajo:
 
 ```text
 Un paso por vez.
 Explicar qué hacer, por qué se hace y cómo validar.
 No avanzar hasta que el usuario diga "siguiente".
 Evitar sobrearquitectura.
+No quedarse afinando infinitamente un punto si el concepto arquitectónico ya quedó claro.
 ```
 
 ---
@@ -48,7 +51,7 @@ Pipeline determinístico + intervención agentic acotada
 
 No es un agente totalmente autónomo.
 
-El flujo principal está predeterminado:
+Flujo principal:
 
 ```text
 load_config
@@ -62,7 +65,7 @@ load_config
   -> END
 ```
 
-Nota importante:
+Notas de diseño:
 
 ```text
 claude_analysis está en el grafo, pero solo procesa casos ambiguous.
@@ -81,7 +84,7 @@ humano si hace falta revisión
 
 ## Configuración segura actual
 
-En `config/routes.yaml` el modo seguro de laboratorio es:
+En `config/routes.yaml`, el modo seguro de laboratorio es:
 
 ```yaml
 global:
@@ -116,14 +119,14 @@ Para aprender y probar arquitectura, usar cached + mock + Telegram apagado.
 | Phase 3 | COMPLETA | Alertas por Telegram |
 | Phase 4 | COMPLETA | Review queue manual |
 | Phase 5 | COMPLETA | Claude analiza casos ambiguos |
-| Phase 6 | EN CURSO | Observabilidad y resiliencia básica |
-| Phase 7 | PENDIENTE | Backend API + interfaz de usuario |
+| Phase 6 | COMPLETA / SUFICIENTE | Observabilidad, auditoría y resiliencia básica |
+| Phase 7 | SIGUIENTE | Backend API + interfaz de usuario mínima |
 
 ---
 
 ## Conceptos arquitectónicos aprendidos
 
-### 1. State
+### State
 
 `FlightMonitorState` es el expediente vivo de una corrida.
 
@@ -148,7 +151,7 @@ run_id
 errors
 ```
 
-### 2. Persistence
+### Persistence
 
 SQLite es la memoria permanente del sistema.
 
@@ -163,7 +166,7 @@ agent_runs
 
 `db.py` no es una tool agentic. Es un adapter simple de persistencia SQLite.
 
-### 3. Nodes
+### Nodes
 
 Regla mental:
 
@@ -184,7 +187,7 @@ store_decisions
 send_alert
 ```
 
-### 4. Tools vs Persistence
+### Tools vs Persistence
 
 Separación conceptual:
 
@@ -198,7 +201,7 @@ persistence/
   ejemplo: SQLite, snapshots, historial, review queue
 ```
 
-### 5. Observability
+### Observability
 
 Observabilidad es una preocupación transversal.
 
@@ -233,11 +236,11 @@ data/flight_agent.sqlite
 
 ---
 
-## Phase 6 — Observabilidad
+# Phase 6 — Observabilidad, auditoría y resiliencia básica
 
-Phase 6 está enfocada en aprender arquitectura de observabilidad y resiliencia, no en llenar el proyecto de logs.
+**Estado general:** COMPLETA / SUFICIENTE PARA EL LABORATORIO.
 
-Regla importante:
+Regla aprendida:
 
 ```text
 No todo print debe guardarse en SQLite.
@@ -260,26 +263,11 @@ Implementado y validado:
 
 1. `run_id` único por ejecución en `main.py`.
 2. Logs básicos por node con `src/flight_agent/observability/logging.py`.
-3. `create_tables()` fue movido al inicio de `main.py`.
-4. Se creó tabla `agent_runs` en SQLite.
-5. Se creó función `save_agent_run()` en `src/flight_agent/persistence/db.py`.
+3. `create_tables()` movido al inicio de `main.py`.
+4. Tabla `agent_runs` en SQLite.
+5. Función `save_agent_run()` en `src/flight_agent/persistence/db.py`.
 6. `main.py` guarda una fila en `agent_runs` desde `finally`.
-7. Se validó en SQLite Viewer que `agent_runs` ya tiene registros.
-
-Diseño actual de `main.py`:
-
-```text
-create_tables()
-crear FlightMonitorState
-generar state.run_id
-guardar started_at
-medir duración con perf_counter()
-ejecutar compiled_graph.invoke(state)
-si éxito -> run_status = success
-si falla -> run_status = failed + error_message
-usar raise para no ocultar errores
-en finally -> save_agent_run(...)
-```
+7. Se validó en SQLite Viewer que `agent_runs` tiene registros.
 
 Responsabilidad de `agent_runs`:
 
@@ -287,9 +275,7 @@ Responsabilidad de `agent_runs`:
 Historial auditable de corridas del agente.
 ```
 
-No debe guardar vuelos individuales ni decisiones detalladas.
-
-Campos actuales:
+Campos relevantes:
 
 ```text
 run_id
@@ -303,164 +289,214 @@ telegram_enabled
 flights_found
 alerts_generated
 error_message
+recoverable_errors_count
+```
+
+Nota de nomenclatura:
+
+```text
+recoverable_errors_count quedó implementado con ese nombre.
+Conceptualmente debe entenderse como conteo de errores no fatales.
+Mejor nombre futuro si se refactoriza: non_fatal_errors_count.
+No renombrar ahora salvo que se decida una refactorización explícita.
 ```
 
 ---
 
 ## Phase 6.2 — Errores básicos / resiliencia
 
-**Estado:** EN CURSO.
+**Estado:** COMPLETA / SUFICIENTE.
 
 Objetivo:
 
 ```text
-Preparar al agente para registrar errores internos recuperables.
+Diferenciar error fatal de error no fatal.
 ```
 
-Ejemplos de errores recuperables:
+Concepto aprendido:
 
 ```text
-error en Telegram
-error en Claude
-error en SerpAPI
-error parcial de persistencia
+Error fatal
+  -> rompe la ejecución
+  -> main.py lo captura como failed
+  -> se guarda en agent_runs.error_message
+
+Error no fatal
+  -> ocurre dentro de un node
+  -> el node lo captura localmente
+  -> se agrega a state.errors
+  -> el agente puede continuar
 ```
 
-Importante:
+Implementado y validado:
 
-```text
-No avanzar todavía a retries.
-No avanzar todavía a circuit breakers.
-No crear tablas nuevas todavía.
-No meter logging complejo todavía.
-```
-
-### Phase 6.2.1 — Campo errors en State
-
-**Estado:** COMPLETA.
-
-Se agregó en `src/flight_agent/state.py`:
+1. Se agregó en `FlightMonitorState`:
 
 ```python
 errors: List[Dict] = field(default_factory=list)
 ```
 
-Import necesario:
+2. En `send_alert`, un fallo de Telegram se captura localmente con `try/except`.
+3. El error se agrega a `state.errors`.
+4. `main.py` muestra el conteo de errores al final.
+5. Se validó con simulación controlada de Telegram caído.
+6. La simulación fue retirada después de la prueba.
 
-```python
-from typing import List, Dict
-```
-
-Concepto:
-
-```text
-state.errors = lista temporal de errores recuperables durante una corrida.
-```
-
-Esto todavía no maneja errores. Solo prepara el contenedor.
-
-Ejemplo conceptual futuro:
-
-```python
-state.errors.append({
-    "node": "send_alert",
-    "error": "Telegram timeout"
-})
-```
-
-Validación realizada:
+Punto importante:
 
 ```text
-python main.py corre sin error de imports ni error por field/List/Dict.
+state.errors nace cuando se crea FlightMonitorState().
+No nace cuando falla Telegram.
+Telegram solo agrega elementos a esa lista.
 ```
 
 ---
 
-## Siguiente paso exacto
+## Phase 6.3 — Resumen mínimo de errores no fatales
 
-Continuar con:
+**Estado:** COMPLETA / SUFICIENTE.
+
+Objetivo:
 
 ```text
-Phase 6.2.2 — Registrar un error recuperable en state.errors
+Persistir un resumen mínimo de errores no fatales por corrida.
 ```
 
-Primer caso recomendado:
+Implementado y validado:
+
+1. Se agregó columna en `agent_runs`:
 
 ```text
-send_alert / Telegram
+recoverable_errors_count
+```
+
+2. Se agregó helper en `db.py`:
+
+```python
+column_exists(conn, table_name, column_name)
+```
+
+Uso:
+
+```text
+Permite agregar columnas con ALTER TABLE sin romper si se ejecuta create_tables() varias veces.
+```
+
+3. `save_agent_run()` recibe `recoverable_errors_count`.
+4. `main.py` calcula el conteo desde `result["errors"]` si hay resultado final.
+5. Se decidió dejar lógica defensiva para fallback con `state.errors` si no hay `result`.
+6. Se validó que SQLite guarda el conteo.
+
+Limitación aceptada:
+
+```text
+No se guarda el detalle de cada error no fatal.
+Solo se guarda el conteo.
+Eso es suficiente para este nivel del laboratorio.
+```
+
+---
+
+## Phase 6.4 — Decision Audit
+
+**Estado:** COMPLETA / SUFICIENTE.
+
+Objetivo:
+
+```text
+Auditar qué decisiones tomó el agente y en qué ejecución ocurrieron.
+```
+
+Implementado y validado:
+
+1. Se agregó columna en `decisions`:
+
+```text
+run_id
+```
+
+2. Se actualizó `save_decisions()` para recibir `run_id`.
+3. Se corrigió `INSERT INTO decisions` para usar columnas explícitas.
+4. `store_decisions()` llama a:
+
+```python
+save_decisions(state.alerts_to_send, now, state.run_id)
+```
+
+5. Se validó que las nuevas filas de `decisions` tienen `run_id`.
+
+Buena práctica aprendida:
+
+```text
+Evitar INSERT INTO tabla VALUES (...)
+Preferir INSERT INTO tabla (col1, col2, ...) VALUES (...)
 ```
 
 Motivo:
 
 ```text
-Telegram es una dependencia externa.
-Si Telegram falla, no necesariamente debe caer todo el agente.
-El sistema puede registrar el error y continuar.
-```
-
-Pero avanzar solo con un cambio pequeño:
-
-```text
-Agregar try/except local en el node de envío de alerta.
-Si falla Telegram, hacer append a state.errors.
-No persistir todavía en SQLite.
-No hacer retry todavía.
-No crear tabla agent_errors todavía.
+Si la tabla crece, el INSERT no se rompe por cantidad u orden de columnas.
 ```
 
 ---
 
-## Pendientes de Phase 6
+## Phase 6.5 — Review Queue Observability
 
-Orden recomendado:
-
-```text
-1. Run History / Audit Trail          COMPLETO
-2. Errores básicos en state.errors    EN CURSO
-3. Persistir resumen de errores       PENDIENTE
-4. Decision Audit                     PENDIENTE
-5. Review Queue Observability         PENDIENTE
-6. Node Events                        SOLO SI HACE FALTA
-```
-
-### Decision Audit futuro
+**Estado:** COMPLETA / SUFICIENTE.
 
 Objetivo:
 
 ```text
-Auditar qué decidió el agente, por qué y en qué ejecución ocurrió.
+Conectar los casos de revisión humana con la corrida que los generó.
 ```
 
-Ejemplo:
+Implementado y validado:
+
+1. Se agregó columna en `review_queue`:
 
 ```text
 run_id
-flight_id
-decision: alert / ignore / recheck / needs_review
-source: rules / claude / mock
-reason
-created_at
 ```
 
-### Review Queue Observability futuro
+2. Se actualizó `save_review_queue()` para recibir `run_id`.
+3. Se actualizó `send_alert()` para llamar:
 
-Objetivo:
+```python
+save_review_queue(reviews, datetime.now(), state.run_id)
+```
+
+4. Se validó que las nuevas filas de `review_queue` tienen `run_id`.
+
+Corrección arquitectónica importante:
 
 ```text
-Conectar decisiones dudosas con revisión humana.
+Antes:
+telegram_enabled = false
+  -> send_alert retornaba temprano
+  -> no se guardaba review_queue
+
+Ahora:
+review_queue se guarda aunque Telegram esté apagado.
+Telegram solo controla el envío externo.
 ```
 
-Patrón:
+Regla aprendida:
 
 ```text
-human-in-the-loop
+review_mode controla revisión humana.
+telegram_enabled controla notificación externa.
+No deben estar acoplados.
 ```
 
-### Node Events futuro
+---
 
-No implementarlo todavía.
+## Phase 6.6 — Node Events
 
-Sería tracing detallado por node:
+**Estado:** DIFERIDO.
+
+No implementarlo ahora.
+
+Node Events sería tracing detallado:
 
 ```text
 run_id
@@ -471,15 +507,110 @@ duration_seconds
 message
 ```
 
-Esto puede ser útil después, pero no es urgente para el laboratorio.
+Decisión:
+
+```text
+No hace falta para el objetivo actual.
+Ya se entendieron las piezas principales de observabilidad.
+Implementarlo ahora sería sobrearquitectura.
+```
 
 ---
 
-## Mejoras futuras fuera de Phase 6 inmediata
+# Estado final de Phase 6
+
+Piezas consolidadas:
+
+```text
+agent_runs
+  -> historial de corridas
+
+state.errors
+  -> errores no fatales temporales dentro de una corrida
+
+agent_runs.recoverable_errors_count
+  -> resumen persistente de errores no fatales
+
+decisions.run_id
+  -> auditoría de decisiones por corrida
+
+review_queue.run_id
+  -> auditoría human-in-the-loop por corrida
+```
+
+Con esto, Phase 6 queda cerrada para el laboratorio.
+
+---
+
+# Phase 7 — Backend API + interfaz de usuario mínima
+
+**Estado:** SIGUIENTE.
+
+Objetivo de Phase 7:
+
+```text
+Exponer la información del agente mediante una API simple para consultar corridas, decisiones y casos de revisión.
+```
+
+No empezar con frontend completo.
+
+Orden recomendado:
+
+```text
+Phase 7.1 — Definir frontera de la API
+Phase 7.2 — Crear API mínima con FastAPI
+Phase 7.3 — Endpoint GET /runs
+Phase 7.4 — Endpoint GET /runs/{run_id}
+Phase 7.5 — Endpoint GET /review-queue
+Phase 7.6 — UI mínima solo si aporta al aprendizaje
+```
+
+Reglas para Phase 7:
+
+```text
+No rediseñar todo el agente.
+No meter autenticación todavía.
+No meter Docker todavía.
+No meter React todavía.
+No crear microservicios.
+No convertir esto en plataforma.
+Primero API read-only para entender la frontera entre agente y backend.
+```
+
+Primer paso exacto recomendado:
+
+```text
+Phase 7.1 — Definir qué debe exponer la API y qué NO debe exponer.
+```
+
+Pregunta arquitectónica inicial:
+
+```text
+¿La API debe ejecutar el agente o solo consultar resultados guardados?
+```
+
+Recomendación inicial:
+
+```text
+Primero API read-only.
+La API consulta SQLite.
+El agente se sigue ejecutando por main.py.
+```
+
+Motivo:
+
+```text
+Separar ejecución del agente de consulta de resultados.
+Eso mantiene simple el diseño y evita mezclar orquestación con visualización.
+```
+
+---
+
+## Mejoras futuras fuera del flujo inmediato
 
 ### Subgrafo condicional real
 
-Actualmente `claude_analysis` está siempre conectado después de `decision_router`, aunque internamente solo procesa ambiguos.
+Actualmente `claude_analysis` está conectado después de `decision_router`, aunque internamente solo procesa ambiguos.
 
 Más adelante se puede convertir en routing condicional real:
 
@@ -502,7 +633,20 @@ run_repository.py
 sqlite.py
 ```
 
-Por ahora se mantiene simple para el laboratorio.
+Por ahora se mantiene simple.
+
+### Renombrar recoverable_errors_count
+
+El nombre actual puede confundir.
+
+Nombre conceptual más claro:
+
+```text
+non_fatal_errors_count
+```
+
+No cambiar ahora para no perder tiempo en refactorización.
+Solo tenerlo en cuenta para una limpieza futura.
 
 ---
 
@@ -510,9 +654,11 @@ Por ahora se mantiene simple para el laboratorio.
 
 Cuando se retome este proyecto:
 
-1. Leer primero este `checkpoint.md`.
+1. Leer primero este `checkpoint.md` desde GitHub.
 2. Recordar que el objetivo es aprendizaje de arquitectura y diseño de agentes IA.
 3. Mantener pasos pequeños.
 4. No saltar a soluciones empresariales complejas antes de que el concepto esté claro.
-5. No proponer retries, circuit breakers, colas, OpenTelemetry o dashboards antes de cerrar errores básicos.
-6. Continuar desde `Phase 6.2.2`.
+5. No quedarse horas afinando una fase si el concepto ya quedó aprendido.
+6. Phase 6 está cerrada.
+7. Continuar desde `Phase 7.1 — Definir frontera de la API`.
+8. Mantener la dinámica: qué hacer, por qué se hace y cómo validar.
