@@ -1,25 +1,54 @@
 # Checkpoint: Flight Agent MVP
 
 **Fecha:** 2026-07-03  
-**Objetivo principal:** Aprender arquitectura de soluciones de agentes IA usando un proyecto real como laboratorio.
+**Proyecto:** `flight-agent`  
+**Repo GitHub:** `atelloa/flight-agent`  
+**Archivo de continuidad:** `checkpoint.md` en la raíz del repo.
+
+Este archivo existe para poder retomar el laboratorio en un nuevo chat sin volver a explicar todo el contexto.
 
 ---
 
-## Estado actual del laboratorio
+## Objetivo del laboratorio
 
-| Fase | Estado | Resultado |
-|---|---|---|
-| Phase 1 | COMPLETA | MVP local con consola |
-| Phase 2 | COMPLETA | Persistencia SQLite |
-| Phase 3 | COMPLETA | Alertas por Telegram |
-| Phase 4 | COMPLETA | Review queue manual |
-| Phase 5 | COMPLETA | Claude analiza casos ambiguos |
-| Phase 6 | EN CURSO | Observabilidad básica por consola + diseño de auditoría |
-| Phase 7 | PENDIENTE | Backend API + interfaz de usuario |
+Aprender **arquitectura y diseño de agentes IA** usando un proyecto real y pequeño como laboratorio.
+
+El objetivo principal no es hacer el sistema más complejo rápido. El objetivo es entender, paso a paso, cómo se diseñan las piezas de un agente:
+
+```text
+state
+nodes
+tools
+persistence
+routing
+observability
+resilience
+auditability
+human-in-the-loop
+```
+
+Regla de trabajo:
+
+```text
+Un paso por vez.
+Explicar qué hacer, por qué se hace y cómo validar.
+No avanzar hasta que el usuario diga "siguiente".
+Evitar sobrearquitectura.
+```
 
 ---
 
-## Flujo actual implementado
+## Arquitectura actual
+
+El proyecto es un agente de monitoreo de vuelos con Python, LangGraph y un patrón híbrido:
+
+```text
+Pipeline determinístico + intervención agentic acotada
+```
+
+No es un agente totalmente autónomo.
+
+El flujo principal está predeterminado:
 
 ```text
 load_config
@@ -33,7 +62,62 @@ load_config
   -> END
 ```
 
-Nota importante: `claude_analysis` siempre aparece en el grafo, pero solo procesa alertas con `tipo = ambiguous`. Si no hay casos ambiguos, el node termina sin llamar a Claude.
+Nota importante:
+
+```text
+claude_analysis está en el grafo, pero solo procesa casos ambiguous.
+Si no hay ambiguos, no debería gastar Claude.
+```
+
+Esto se entiende como un **Bounded Agentic Workflow**:
+
+```text
+reglas determinísticas primero
+Claude solo para ambigüedad
+humano si hace falta revisión
+```
+
+---
+
+## Configuración segura actual
+
+En `config/routes.yaml` el modo seguro de laboratorio es:
+
+```yaml
+global:
+  review_mode: true
+  fetch_mode: "cached"
+  claude_mode: "mock"
+  telegram_enabled: false
+```
+
+Significado:
+
+| Config | Modo real | Modo seguro |
+|---|---|---|
+| `fetch_mode` | `live` llama SerpAPI | `cached` lee SQLite |
+| `claude_mode` | `live` llama Claude | `mock` simula Claude |
+| `telegram_enabled` | `true` envía Telegram | `false` no envía |
+
+Regla actual:
+
+```text
+Para aprender y probar arquitectura, usar cached + mock + Telegram apagado.
+```
+
+---
+
+## Estado del laboratorio
+
+| Fase | Estado | Resultado |
+|---|---|---|
+| Phase 1 | COMPLETA | MVP local con consola |
+| Phase 2 | COMPLETA | Persistencia SQLite |
+| Phase 3 | COMPLETA | Alertas por Telegram |
+| Phase 4 | COMPLETA | Review queue manual |
+| Phase 5 | COMPLETA | Claude analiza casos ambiguos |
+| Phase 6 | EN CURSO | Observabilidad y resiliencia básica |
+| Phase 7 | PENDIENTE | Backend API + interfaz de usuario |
 
 ---
 
@@ -43,54 +127,43 @@ Nota importante: `claude_analysis` siempre aparece en el grafo, pero solo proces
 
 `FlightMonitorState` es el expediente vivo de una corrida.
 
-Vive en RAM durante `python main.py`. No es permanente.
+Vive en RAM mientras corre:
 
-Ejemplo:
-
-```text
-state.latest_offers
-state.rule_matches
-state.suspicious_cases
-state.alerts_to_send
+```bash
+python main.py
 ```
 
-Cuando termina la ejecución, ese state desaparece.
+Cuando termina la ejecución, el `state` desaparece.
 
-### 2. Persistencia
+Ejemplos de datos en state:
 
-SQLite es la memoria permanente.
+```text
+routes_config
+global_config
+latest_offers
+rule_matches
+suspicious_cases
+alerts_to_send
+run_id
+errors
+```
 
-Guarda:
+### 2. Persistence
+
+SQLite es la memoria permanente del sistema.
+
+Guarda datos que deben sobrevivir entre ejecuciones:
 
 ```text
 flights
 decisions
 review_queue
+agent_runs
 ```
 
-La tabla `flights` funciona también como cache mínima usando `searched_at` para identificar el último snapshot.
+`db.py` no es una tool agentic. Es un adapter simple de persistencia SQLite.
 
-### 3. Snapshot
-
-Un snapshot es la foto de vuelos encontrada en una corrida.
-
-En modo `live`:
-
-```text
-SerpAPI -> state.latest_offers -> SQLite
-```
-
-En modo `cached`:
-
-```text
-SQLite -> state.latest_offers
-```
-
-La cache reconstruye objetos `Flight` para que el resto del grafo trabaje igual sin saber si los vuelos vinieron de SerpAPI o SQLite.
-
-### 4. Nodes
-
-Los nodes organizan el workflow.
+### 3. Nodes
 
 Regla mental:
 
@@ -111,9 +184,9 @@ store_decisions
 send_alert
 ```
 
-### 5. Tools vs Persistence
+### 4. Tools vs Persistence
 
-Se separó el concepto:
+Separación conceptual:
 
 ```text
 tools/
@@ -125,99 +198,25 @@ persistence/
   ejemplo: SQLite, snapshots, historial, review queue
 ```
 
-`db.py` dejó de entenderse como tool agentica y pasó a verse como adapter de persistencia SQLite.
+### 5. Observability
 
-### 6. Bounded Agentic Workflow
+Observabilidad es una preocupación transversal.
 
-Claude no controla todo el flujo.
-
-Claude solo entra cuando el router marca un caso como ambiguo.
-
-Esto mantiene el sistema:
+Por eso vive en:
 
 ```text
-más barato
-más trazable
-más estable
-menos variable
+src/flight_agent/observability/
 ```
 
-### 7. Modos de ejecución
-
-Se agregaron banderas para controlar costos y efectos externos.
-
-En `config/routes.yaml`:
-
-```yaml
-global:
-  review_mode: true
-  fetch_mode: "cached"
-  claude_mode: "mock"
-  telegram_enabled: false
-```
-
-Significado:
-
-| Config | live / true | cached / mock / false |
-|---|---|---|
-| `fetch_mode` | llama SerpAPI | lee último snapshot desde SQLite |
-| `claude_mode` | llama Claude | simula respuesta estructurada |
-| `telegram_enabled` | envía Telegram | no envía Telegram |
-
-Modo laboratorio seguro:
-
-```text
-fetch_mode: cached
-claude_mode: mock
-telegram_enabled: false
-```
-
-Este modo permite ejecutar el pipeline completo sin gastar SerpAPI, sin gastar Claude y sin enviar Telegram.
-
-### 8. Observabilidad básica
-
-Se empezó Phase 6 agregando trazabilidad mínima por ejecución.
-
-Piezas implementadas:
-
-```text
-run_id por ejecución
-logs con timestamp humano
-logs de inicio y fin de node
-duration por node instrumentado
-duración total del workflow
-status success / failed
-helper observability/logging.py
-```
-
-Concepto aprendido:
-
-```text
-run_id = identificador de una corrida completa del agente
-```
-
-El `run_id` vive en `state` porque el state viaja por el grafo y permite que los nodes sepan a qué ejecución pertenecen.
-
-Se creó una mini capa transversal:
-
-```text
-observability/
-  logging.py
-```
-
-Regla actual:
-
-```text
-node = lógica del agente
-observability/logging.py = formato de logs + medición de tiempo
-state = transporte de datos de la corrida
-```
+No debe mezclarse innecesariamente dentro de tools ni persistence.
 
 ---
 
 ## Archivos principales
 
 ```text
+checkpoint.md
+main.py
 config/routes.yaml
 src/flight_agent/state.py
 src/flight_agent/graph.py
@@ -226,43 +225,71 @@ src/flight_agent/nodes/fetch_flights.py
 src/flight_agent/nodes/claude_analysis.py
 src/flight_agent/nodes/nodes.py
 src/flight_agent/tools/claude_tool.py
+src/flight_agent/tools/telegram_tool.py
 src/flight_agent/persistence/db.py
 src/flight_agent/observability/logging.py
 data/flight_agent.sqlite
-main.py
 ```
 
 ---
 
-## Decisiones de arquitectura tomadas
+## Phase 6 — Observabilidad
 
-1. El flujo principal sigue siendo determinístico.
-2. Claude se usa solo para interpretar casos ambiguos.
-3. SQLite se usa como memoria permanente y cache local.
-4. El state se mantiene como memoria temporal de la corrida.
-5. `db.py` pertenece conceptualmente a `persistence/`, no a `tools/`.
-6. Los modos `live/cached/mock` permiten separar desarrollo, pruebas y ejecución real.
-7. Las credenciales deben vivir en `.env` y `.env` no debe versionarse.
-8. Observabilidad es una preocupación transversal, por eso vive en `observability/`, no en `tools/` ni en `persistence/`.
-9. Por ahora la observabilidad es mínima y por consola; la persistencia de auditoría se diseñará aparte.
+Phase 6 está enfocada en aprender arquitectura de observabilidad y resiliencia, no en llenar el proyecto de logs.
+
+Regla importante:
+
+```text
+No todo print debe guardarse en SQLite.
+La base no debe convertirse en un basurero de logs.
+```
 
 ---
 
-## Pendientes próximos
+## Phase 6.1 — Run History / Audit Trail
 
-### Phase 6: Observabilidad
-
-Phase 6 queda enfocada en estos bloques de arquitectura y diseño:
-
-#### 6.1 Run History / Audit Trail
+**Estado:** COMPLETA.
 
 Objetivo:
 
 ```text
-guardar un resumen persistente de cada ejecución del agente
+Guardar un resumen persistente de cada ejecución del agente.
 ```
 
-Ejemplo de datos:
+Implementado y validado:
+
+1. `run_id` único por ejecución en `main.py`.
+2. Logs básicos por node con `src/flight_agent/observability/logging.py`.
+3. `create_tables()` fue movido al inicio de `main.py`.
+4. Se creó tabla `agent_runs` en SQLite.
+5. Se creó función `save_agent_run()` en `src/flight_agent/persistence/db.py`.
+6. `main.py` guarda una fila en `agent_runs` desde `finally`.
+7. Se validó en SQLite Viewer que `agent_runs` ya tiene registros.
+
+Diseño actual de `main.py`:
+
+```text
+create_tables()
+crear FlightMonitorState
+generar state.run_id
+guardar started_at
+medir duración con perf_counter()
+ejecutar compiled_graph.invoke(state)
+si éxito -> run_status = success
+si falla -> run_status = failed + error_message
+usar raise para no ocultar errores
+en finally -> save_agent_run(...)
+```
+
+Responsabilidad de `agent_runs`:
+
+```text
+Historial auditable de corridas del agente.
+```
+
+No debe guardar vuelos individuales ni decisiones detalladas.
+
+Campos actuales:
 
 ```text
 run_id
@@ -278,42 +305,133 @@ alerts_generated
 error_message
 ```
 
-Responsabilidad:
+---
 
-```text
-agent_runs = historial auditable de corridas del agente
-```
+## Phase 6.2 — Errores básicos / resiliencia
 
-No debe guardar vuelos individuales ni decisiones detalladas.
-
-#### 6.2 Error Handling Observability
+**Estado:** EN CURSO.
 
 Objetivo:
 
 ```text
-definir qué hace el agente cuando falla una dependencia
+Preparar al agente para registrar errores internos recuperables.
 ```
 
-Preguntas de diseño:
+Ejemplos de errores recuperables:
 
 ```text
-Si falla SerpAPI, ¿paro o uso cache?
-Si falla Claude, ¿marco needs_review?
-Si falla Telegram, ¿guardo alerta pendiente?
-Si falla SQLite, ¿el flujo puede continuar?
+error en Telegram
+error en Claude
+error en SerpAPI
+error parcial de persistencia
 ```
 
-Esto no es solo `try/except`; es diseño de resiliencia.
+Importante:
 
-#### 6.3 Decision Audit
+```text
+No avanzar todavía a retries.
+No avanzar todavía a circuit breakers.
+No crear tablas nuevas todavía.
+No meter logging complejo todavía.
+```
+
+### Phase 6.2.1 — Campo errors en State
+
+**Estado:** COMPLETA.
+
+Se agregó en `src/flight_agent/state.py`:
+
+```python
+errors: List[Dict] = field(default_factory=list)
+```
+
+Import necesario:
+
+```python
+from typing import List, Dict
+```
+
+Concepto:
+
+```text
+state.errors = lista temporal de errores recuperables durante una corrida.
+```
+
+Esto todavía no maneja errores. Solo prepara el contenedor.
+
+Ejemplo conceptual futuro:
+
+```python
+state.errors.append({
+    "node": "send_alert",
+    "error": "Telegram timeout"
+})
+```
+
+Validación realizada:
+
+```text
+python main.py corre sin error de imports ni error por field/List/Dict.
+```
+
+---
+
+## Siguiente paso exacto
+
+Continuar con:
+
+```text
+Phase 6.2.2 — Registrar un error recuperable en state.errors
+```
+
+Primer caso recomendado:
+
+```text
+send_alert / Telegram
+```
+
+Motivo:
+
+```text
+Telegram es una dependencia externa.
+Si Telegram falla, no necesariamente debe caer todo el agente.
+El sistema puede registrar el error y continuar.
+```
+
+Pero avanzar solo con un cambio pequeño:
+
+```text
+Agregar try/except local en el node de envío de alerta.
+Si falla Telegram, hacer append a state.errors.
+No persistir todavía en SQLite.
+No hacer retry todavía.
+No crear tabla agent_errors todavía.
+```
+
+---
+
+## Pendientes de Phase 6
+
+Orden recomendado:
+
+```text
+1. Run History / Audit Trail          COMPLETO
+2. Errores básicos en state.errors    EN CURSO
+3. Persistir resumen de errores       PENDIENTE
+4. Decision Audit                     PENDIENTE
+5. Review Queue Observability         PENDIENTE
+6. Node Events                        SOLO SI HACE FALTA
+```
+
+### Decision Audit futuro
 
 Objetivo:
 
 ```text
-auditar las decisiones del agente
+Auditar qué decidió el agente, por qué y en qué ejecución ocurrió.
 ```
 
-Ejemplo de datos:
+Ejemplo:
 
 ```text
 run_id
@@ -324,48 +442,25 @@ reason
 created_at
 ```
 
-Responsabilidad:
-
-```text
-explicar qué decidió el agente, por qué y en qué ejecución ocurrió
-```
-
-#### 6.4 Review Queue Observability
+### Review Queue Observability futuro
 
 Objetivo:
 
 ```text
-conectar decisiones dudosas con revisión humana
+Conectar decisiones dudosas con revisión humana.
 ```
 
-Ejemplo de datos:
-
-```text
-run_id
-flight_id
-reason
-status: pending / reviewed / dismissed
-created_at
-reviewed_at
-```
-
-Patrón arquitectónico:
+Patrón:
 
 ```text
 human-in-the-loop
 ```
 
-El agente no debe actuar automáticamente sobre todos los casos ambiguos.
+### Node Events futuro
 
-#### 6.5 Node Events
+No implementarlo todavía.
 
-Objetivo:
-
-```text
-guardar eventos detallados por node si realmente hace falta
-```
-
-Ejemplo de datos:
+Sería tracing detallado por node:
 
 ```text
 run_id
@@ -376,28 +471,13 @@ duration_seconds
 message
 ```
 
-Esto se parece más a tracing detallado. No es urgente para el laboratorio.
-
-Orden recomendado:
-
-```text
-1. agent_runs
-2. errores básicos
-3. decision audit
-4. review_queue
-5. node_events si realmente hace falta
-```
-
-Regla importante:
-
-```text
-No todo print debe guardarse en SQLite.
-La base no debe convertirse en un basurero de logs.
-```
+Esto puede ser útil después, pero no es urgente para el laboratorio.
 
 ---
 
-### Mejora futura: subgrafo condicional real
+## Mejoras futuras fuera de Phase 6 inmediata
+
+### Subgrafo condicional real
 
 Actualmente `claude_analysis` está siempre conectado después de `decision_router`, aunque internamente solo procesa ambiguos.
 
@@ -408,7 +488,9 @@ si hay ambiguous -> claude_analysis
 si no hay ambiguous -> store_decisions
 ```
 
-### Mejora futura: repositories
+No hacerlo todavía.
+
+### Repositories
 
 Si el proyecto crece, dividir `persistence/db.py` en:
 
@@ -416,7 +498,21 @@ Si el proyecto crece, dividir `persistence/db.py` en:
 flight_repository.py
 decision_repository.py
 review_queue_repository.py
+run_repository.py
 sqlite.py
 ```
 
 Por ahora se mantiene simple para el laboratorio.
+
+---
+
+## Reglas para el próximo chat
+
+Cuando se retome este proyecto:
+
+1. Leer primero este `checkpoint.md`.
+2. Recordar que el objetivo es aprendizaje de arquitectura y diseño de agentes IA.
+3. Mantener pasos pequeños.
+4. No saltar a soluciones empresariales complejas antes de que el concepto esté claro.
+5. No proponer retries, circuit breakers, colas, OpenTelemetry o dashboards antes de cerrar errores básicos.
+6. Continuar desde `Phase 6.2.2`.
