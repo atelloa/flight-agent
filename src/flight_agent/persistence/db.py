@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.flight_agent.state import Flight
 
 DB_PATH = "data/flight_agent.sqlite"
@@ -262,3 +262,153 @@ def save_agent_run(
 
     conn.commit()
     conn.close()
+
+def get_agent_runs() -> list:
+    """Lee el historial de ejecuciones del agente"""
+    conn = get_connection()
+
+    rows = conn.execute("""
+        SELECT
+            run_id,
+            started_at,
+            finished_at,
+            status,
+            duration_seconds,
+            fetch_mode,
+            claude_mode,
+            telegram_enabled,
+            flights_found,
+            alerts_generated,
+            error_message,
+            recoverable_errors_count
+        FROM agent_runs
+        ORDER BY started_at DESC
+    """).fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+def get_agent_run(run_id: str) -> dict | None:
+    """Lee una ejecucion especifica del agente por run_id"""
+    conn = get_connection()
+
+    row = conn.execute("""
+        SELECT
+            run_id,
+            started_at,
+            finished_at,
+            status,
+            duration_seconds,
+            fetch_mode,
+            claude_mode,
+            telegram_enabled,
+            flights_found,
+            alerts_generated,
+            error_message,
+            recoverable_errors_count
+        FROM agent_runs
+        WHERE run_id = ?
+    """, (run_id,)).fetchone()
+
+    conn.close()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+def get_cheapest_offers(route: str, window_days: int, limit: int = 3) -> list:
+    """Lee las ofertas mas baratas guardadas para una ruta en los ultimos N dias"""
+    conn = get_connection()
+
+    cutoff = datetime.now() - timedelta(days=window_days)
+
+    rows = conn.execute("""
+        SELECT
+            id,
+            flight_number,
+            route,
+            price,
+            date,
+            airline,
+            stops,
+            searched_at
+        FROM flights
+        WHERE route = ?
+          AND searched_at >= ?
+        ORDER BY price ASC, searched_at DESC
+        LIMIT ?
+    """, (route, str(cutoff), limit)).fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "id": row["id"],
+            "flight_number": row["flight_number"],
+            "route": row["route"],
+            "price": row["price"],
+            "departure_date": row["date"],
+            "airline": row["airline"],
+            "stops": row["stops"],
+            "captured_at": row["searched_at"],
+        }
+        for row in rows
+    ]
+
+def get_cheapest_offers_for_all_routes(window_days: int, limit: int = 3) -> list:
+    """Lee las ofertas mas baratas por cada ruta en los ultimos N dias"""
+    conn = get_connection()
+
+    cutoff = datetime.now() - timedelta(days=window_days)
+
+    route_rows = conn.execute("""
+        SELECT DISTINCT route
+        FROM flights
+        WHERE searched_at >= ?
+        ORDER BY route
+    """, (str(cutoff),)).fetchall()
+
+    result = []
+
+    for route_row in route_rows:
+        route = route_row["route"]
+
+        offer_rows = conn.execute("""
+            SELECT
+                id,
+                flight_number,
+                route,
+                price,
+                date,
+                airline,
+                stops,
+                searched_at
+            FROM flights
+            WHERE route = ?
+              AND searched_at >= ?
+            ORDER BY price ASC, searched_at DESC
+            LIMIT ?
+        """, (route, str(cutoff), limit)).fetchall()
+
+        result.append({
+            "route": route,
+            "offers": [
+                {
+                    "id": row["id"],
+                    "flight_number": row["flight_number"],
+                    "route": row["route"],
+                    "price": row["price"],
+                    "departure_date": row["date"],
+                    "airline": row["airline"],
+                    "stops": row["stops"],
+                    "captured_at": row["searched_at"],
+                }
+                for row in offer_rows
+            ]
+        })
+
+    conn.close()
+
+    return result
