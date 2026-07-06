@@ -1,6 +1,6 @@
 # Checkpoint: Flight Agent MVP
 
-**Fecha:** 2026-07-04  
+**Fecha:** 2026-07-05  
 **Proyecto:** `flight-agent`  
 **Repo GitHub:** `atelloa/flight-agent`  
 **Archivo de continuidad:** `checkpoint.md` en la raíz del repo.
@@ -24,9 +24,9 @@ routing
 observability
 resilience
 auditability
-human-in-the-loop
 backend API
 frontend / UI
+human-in-the-loop
 jobs
 scheduler
 worker
@@ -43,6 +43,7 @@ Evitar sobrearquitectura.
 No quedarse afinando infinitamente un punto si el concepto arquitectónico ya quedó claro.
 Separar claramente arquitectura de implementación.
 Primero entender la decisión de diseño; después escribir código.
+En Phase 8, aprender conceptos mientras se construye laboratorio, no teoría pura aislada.
 ```
 
 ---
@@ -126,8 +127,8 @@ Para aprender y probar arquitectura, usar cached + mock + Telegram apagado.
 | Phase 4 | COMPLETA | Review queue manual |
 | Phase 5 | COMPLETA | Claude analiza casos ambiguos |
 | Phase 6 | COMPLETA / SUFICIENTE | Observabilidad, auditoría y resiliencia básica |
-| Phase 7 | SIGUIENTE | Backend API read-only |
-| Phase 8 | PLANIFICADA | Frontend / UI mínima consumiendo API |
+| Phase 7 | COMPLETA / SUFICIENTE | Backend API read-only con FastAPI |
+| Phase 8 | SIGUIENTE | Frontend / UI mínima consumiendo API, con laboratorio práctico |
 | Phase 9 | PLANIFICADA | Human-in-the-loop operativo |
 | Phase 10 | PLANIFICADA | Ejecución del agente por API |
 | Phase 11 | PLANIFICADA | Jobs, scheduler y worker |
@@ -135,9 +136,33 @@ Para aprender y probar arquitectura, usar cached + mock + Telegram apagado.
 
 ---
 
-## Conceptos arquitectónicos aprendidos
+## Archivos principales
 
-### State
+```text
+checkpoint.md
+main.py
+api.py
+config/routes.yaml
+src/flight_agent/state.py
+src/flight_agent/graph.py
+src/flight_agent/nodes/load_config.py
+src/flight_agent/nodes/fetch_flights.py
+src/flight_agent/nodes/claude_analysis.py
+src/flight_agent/nodes/nodes.py
+src/flight_agent/tools/claude_tool.py
+src/flight_agent/tools/telegram_tool.py
+src/flight_agent/persistence/db.py
+src/flight_agent/observability/logging.py
+data/flight_agent.sqlite
+```
+
+Nota: `api.py` quedó en la raíz por simplicidad didáctica del laboratorio. No es necesariamente la estructura final ideal. Si crece, se puede mover a `src/flight_agent/api/main.py`.
+
+---
+
+# Conceptos arquitectónicos consolidados
+
+## State
 
 `FlightMonitorState` es el expediente vivo de una corrida.
 
@@ -162,7 +187,7 @@ run_id
 errors
 ```
 
-### Persistence
+## Persistence
 
 SQLite es la memoria permanente del sistema.
 
@@ -177,7 +202,7 @@ agent_runs
 
 `db.py` no es una tool agentic. Es un adapter simple de persistencia SQLite.
 
-### Nodes
+## Nodes
 
 Regla mental:
 
@@ -198,7 +223,7 @@ store_decisions
 send_alert
 ```
 
-### Tools vs Persistence
+## Tools vs Persistence
 
 Separación conceptual:
 
@@ -212,7 +237,7 @@ persistence/
   ejemplo: SQLite, snapshots, historial, review queue
 ```
 
-### Observability
+## Observability
 
 Observabilidad es una preocupación transversal.
 
@@ -223,27 +248,6 @@ src/flight_agent/observability/
 ```
 
 No debe mezclarse innecesariamente dentro de tools ni persistence.
-
----
-
-## Archivos principales
-
-```text
-checkpoint.md
-main.py
-config/routes.yaml
-src/flight_agent/state.py
-src/flight_agent/graph.py
-src/flight_agent/nodes/load_config.py
-src/flight_agent/nodes/fetch_flights.py
-src/flight_agent/nodes/claude_analysis.py
-src/flight_agent/nodes/nodes.py
-src/flight_agent/tools/claude_tool.py
-src/flight_agent/tools/telegram_tool.py
-src/flight_agent/persistence/db.py
-src/flight_agent/observability/logging.py
-data/flight_agent.sqlite
-```
 
 ---
 
@@ -258,17 +262,9 @@ No todo print debe guardarse en SQLite.
 La base no debe convertirse en un basurero de logs.
 ```
 
----
-
 ## Phase 6.1 — Run History / Audit Trail
 
 **Estado:** COMPLETA.
-
-Objetivo:
-
-```text
-Guardar un resumen persistente de cada ejecución del agente.
-```
 
 Implementado y validado:
 
@@ -280,13 +276,7 @@ Implementado y validado:
 6. `main.py` guarda una fila en `agent_runs` desde `finally`.
 7. Se validó en SQLite Viewer que `agent_runs` tiene registros.
 
-Responsabilidad de `agent_runs`:
-
-```text
-Historial auditable de corridas del agente.
-```
-
-Campos relevantes:
+Campos relevantes de `agent_runs`:
 
 ```text
 run_id
@@ -303,26 +293,9 @@ error_message
 recoverable_errors_count
 ```
 
-Nota de nomenclatura:
-
-```text
-recoverable_errors_count quedó implementado con ese nombre.
-Conceptualmente debe entenderse como conteo de errores no fatales.
-Mejor nombre futuro si se refactoriza: non_fatal_errors_count.
-No renombrar ahora salvo que se decida una refactorización explícita.
-```
-
----
-
 ## Phase 6.2 — Errores básicos / resiliencia
 
 **Estado:** COMPLETA / SUFICIENTE.
-
-Objetivo:
-
-```text
-Diferenciar error fatal de error no fatal.
-```
 
 Concepto aprendido:
 
@@ -353,25 +326,9 @@ errors: List[Dict] = field(default_factory=list)
 5. Se validó con simulación controlada de Telegram caído.
 6. La simulación fue retirada después de la prueba.
 
-Punto importante:
-
-```text
-state.errors nace cuando se crea FlightMonitorState().
-No nace cuando falla Telegram.
-Telegram solo agrega elementos a esa lista.
-```
-
----
-
 ## Phase 6.3 — Resumen mínimo de errores no fatales
 
 **Estado:** COMPLETA / SUFICIENTE.
-
-Objetivo:
-
-```text
-Persistir un resumen mínimo de errores no fatales por corrida.
-```
 
 Implementado y validado:
 
@@ -387,12 +344,6 @@ recoverable_errors_count
 column_exists(conn, table_name, column_name)
 ```
 
-Uso:
-
-```text
-Permite agregar columnas con ALTER TABLE sin romper si se ejecuta create_tables() varias veces.
-```
-
 3. `save_agent_run()` recibe `recoverable_errors_count`.
 4. `main.py` calcula el conteo desde `result["errors"]` si hay resultado final.
 5. Se decidió dejar lógica defensiva para fallback con `state.errors` si no hay `result`.
@@ -406,17 +357,9 @@ Solo se guarda el conteo.
 Eso es suficiente para este nivel del laboratorio.
 ```
 
----
-
 ## Phase 6.4 — Decision Audit
 
 **Estado:** COMPLETA / SUFICIENTE.
-
-Objetivo:
-
-```text
-Auditar qué decisiones tomó el agente y en qué ejecución ocurrieron.
-```
 
 Implementado y validado:
 
@@ -443,23 +386,9 @@ Evitar INSERT INTO tabla VALUES (...)
 Preferir INSERT INTO tabla (col1, col2, ...) VALUES (...)
 ```
 
-Motivo:
-
-```text
-Si la tabla crece, el INSERT no se rompe por cantidad u orden de columnas.
-```
-
----
-
 ## Phase 6.5 — Review Queue Observability
 
 **Estado:** COMPLETA / SUFICIENTE.
-
-Objetivo:
-
-```text
-Conectar los casos de revisión humana con la corrida que los generó.
-```
 
 Implementado y validado:
 
@@ -499,24 +428,11 @@ telegram_enabled controla notificación externa.
 No deben estar acoplados.
 ```
 
----
-
 ## Phase 6.6 — Node Events
 
 **Estado:** DIFERIDO.
 
 No implementarlo ahora.
-
-Node Events sería tracing detallado:
-
-```text
-run_id
-node_name
-event_type: start / end / error
-timestamp
-duration_seconds
-message
-```
 
 Decisión:
 
@@ -526,54 +442,13 @@ Ya se entendieron las piezas principales de observabilidad.
 Implementarlo ahora sería sobrearquitectura.
 ```
 
----
-
-# Estado final de Phase 6
-
-Piezas consolidadas:
-
-```text
-agent_runs
-  -> historial de corridas
-
-state.errors
-  -> errores no fatales temporales dentro de una corrida
-
-agent_runs.recoverable_errors_count
-  -> resumen persistente de errores no fatales
-
-decisions.run_id
-  -> auditoría de decisiones por corrida
-
-review_queue.run_id
-  -> auditoría human-in-the-loop por corrida
-```
-
 Con esto, Phase 6 queda cerrada para el laboratorio.
-
----
-
-# Ruta de aprendizaje desde Phase 7 en adelante
-
-Decisión tomada el 2026-07-04:
-
-```text
-Separar Backend API y Frontend en fases distintas.
-```
-
-Motivo:
-
-```text
-Una API es una frontera contractual backend.
-Un frontend es una capa de interacción humana que consume esa API.
-Mezclarlas desde el inicio confunde responsabilidades.
-```
 
 ---
 
 # Phase 7 — Arquitectura de Backend APIs
 
-**Estado:** SIGUIENTE.
+**Estado:** COMPLETA / SUFICIENTE PARA EL LABORATORIO.
 
 Objetivo de Phase 7:
 
@@ -581,7 +456,7 @@ Objetivo de Phase 7:
 Entender cómo una API se vuelve una frontera limpia entre el agente y otros consumidores.
 ```
 
-Resultado esperado de Phase 7:
+Resultado final de Phase 7:
 
 ```text
 main.py ejecuta el agente.
@@ -590,13 +465,13 @@ FastAPI consulta SQLite.
 La API no ejecuta el agente todavía.
 ```
 
-Arquitectura objetivo de esta fase:
+Arquitectura final de esta fase:
 
 ```text
 main.py -> agente -> SQLite <- API <- cliente
 ```
 
-Regla principal:
+Regla principal aprendida:
 
 ```text
 Primero API read-only.
@@ -611,10 +486,10 @@ Separar ejecución del agente de consulta de resultados.
 Eso mantiene simple el diseño y evita mezclar orquestación con visualización.
 ```
 
-## Puntos internos de Phase 7
+## Conceptos aprendidos en Phase 7
 
 ```text
-7.1 Qué es una API como frontera arquitectónica
+7.1 API como frontera arquitectónica / boundary
 7.2 Request, response, endpoint, recurso y contrato
 7.3 Métodos HTTP: GET, POST, PUT/PATCH, DELETE
 7.4 Status codes: 200, 201, 400, 404, 500
@@ -627,19 +502,118 @@ Eso mantiene simple el diseño y evita mezclar orquestación con visualización.
 7.11 Diseño de endpoints read-only
 7.12 Qué es FastAPI y por qué usarlo como herramienta
 7.13 Implementación mínima con FastAPI
-7.14 Validación con navegador, curl o Swagger
+7.14 Validación con navegador, Swagger y errores HTTP
 ```
 
-## Qué debe exponer al inicio
+## Endpoints implementados en Phase 7
 
 ```text
 GET /health
 GET /runs
 GET /runs/{run_id}
 GET /review-queue
+GET /routes/{route_id}/cheapest-offers?window=1d|7d&limit=3
+GET /offers/cheapest?window=1d|7d&limit=3
 ```
 
-## Qué NO debe exponer todavía
+## Funciones de persistencia agregadas en `db.py`
+
+```text
+get_agent_runs()
+get_agent_run(run_id)
+get_cheapest_offers(route, window_days, limit)
+get_cheapest_offers_for_all_routes(window_days, limit)
+```
+
+Ya existía y se reutilizó:
+
+```text
+get_review_queue()
+```
+
+## Archivo `api.py`
+
+Se creó `api.py` en la raíz del proyecto para exponer la API FastAPI.
+
+Responsabilidad:
+
+```text
+api.py
+  -> recibe requests HTTP
+  -> llama funciones de lectura en db.py
+  -> devuelve JSON
+```
+
+No debe hacer esto en Phase 7:
+
+```text
+ejecutar main.py
+ejecutar LangGraph
+llamar Claude
+llamar SerpAPI
+enviar Telegram
+modificar configuración
+aprobar/rechazar review_queue
+```
+
+## Comando usado para levantar API en desarrollo
+
+```bash
+uvicorn api:app --reload
+```
+
+Significado:
+
+```text
+api
+  -> archivo api.py
+
+app
+  -> variable app = FastAPI(...)
+
+--reload
+  -> reinicia automáticamente cuando cambian archivos Python
+```
+
+Uvicorn es el servidor ASGI que escucha HTTP y ejecuta la app FastAPI.
+
+## Decisiones importantes de diseño
+
+### `api.py` en raíz
+
+Decisión actual:
+
+```text
+Dejar api.py en la raíz por simplicidad didáctica.
+```
+
+No es necesariamente la estructura final más limpia.
+
+Posible estructura futura:
+
+```text
+src/flight_agent/api/main.py
+src/flight_agent/api/routes.py
+```
+
+No mover todavía si no hay necesidad.
+
+### API read-only
+
+La API inicial solo consulta.
+
+Sí expone:
+
+```text
+GET /health
+GET /runs
+GET /runs/{run_id}
+GET /review-queue
+GET /routes/{route_id}/cheapest-offers
+GET /offers/cheapest
+```
+
+No expone todavía:
 
 ```text
 POST /runs
@@ -658,59 +632,73 @@ Eso ya introduce comandos, ejecución, efectos secundarios o cambios de configur
 Primero aprender API como capa de consulta.
 ```
 
-## FastAPI
+### Endpoint por ruta vs endpoint general
 
-FastAPI es un framework de Python para crear APIs HTTP.
-
-No es la arquitectura.
+Se dejaron dos tipos de consulta:
 
 ```text
-Arquitectura:
-API read-only que consulta SQLite.
-
-Herramienta:
-FastAPI.
+GET /routes/{route_id}/cheapest-offers
 ```
 
-## API Gateway
-
-API Gateway se aprende conceptualmente en Phase 7.8.
-
-No se implementa todavía.
-
-Regla:
+Para consultar una ruta específica.
 
 ```text
-Un API Gateway no se agrega porque tienes una API.
-Se agrega porque tienes varias APIs, exposición externa, seguridad común,
-rate limiting, versionamiento o necesidades operativas.
+GET /offers/cheapest
 ```
 
-Para el estado actual de `flight-agent`:
+Para consultar los top N vuelos más baratos por todos los tramos.
+
+Regla aprendida:
 
 ```text
-API local
-read-only
-una sola API
-SQLite local
-sin usuarios externos
-sin múltiples servicios
-sin cloud
-sin tráfico real
+La URL debe expresar la pregunta que el cliente quiere hacerle al sistema.
 ```
 
-Conclusión:
+## Validación Phase 7.14
+
+Validado localmente por el usuario:
 
 ```text
-Entender API Gateway: sí.
-Implementarlo ahora: no.
+GET /health funcionó.
+GET /runs funcionó.
+GET /runs/{run_id} funcionó.
+GET /review-queue funcionó.
+GET /routes/{route_id}/cheapest-offers funcionó.
+GET /offers/cheapest funcionó para todos los tramos.
 ```
+
+Checklist de validación final:
+
+```text
+/health responde 200 y {"status": "ok"}.
+/runs responde lista de corridas.
+/runs/{run_id} responde una corrida si existe.
+/runs/{run_id} responde 404 si no existe.
+/review-queue responde lista de casos pendientes o [].
+/routes/{route_id}/cheapest-offers responde top por ruta.
+/offers/cheapest responde top por todos los tramos.
+window inválido debe responder 400.
+limit inválido debe responder 400.
+```
+
+Validación arquitectónica final:
+
+```text
+La API no ejecuta main.py.
+La API no ejecuta LangGraph.
+La API no llama Claude.
+La API no llama SerpAPI.
+La API no envía Telegram.
+La API solo consulta SQLite.
+```
+
+Con esto, Phase 7 queda cerrada para el laboratorio.
 
 ---
 
-# Phase 8 — Arquitectura de Frontend / UI
+# Phase 8 — Frontend / UI mínima consumiendo API
 
-**Estado:** PLANIFICADA.
+**Estado:** SIGUIENTE.
 
 Objetivo de Phase 8:
 
@@ -740,42 +728,90 @@ La API protege al frontend de los detalles internos.
 Si mañana SQLite cambia por Postgres, la UI no debería romperse por eso.
 ```
 
-## Puntos internos de Phase 8
+## Enfoque didáctico de Phase 8
+
+No hacer teoría pura aislada.
+
+Cada punto debe trabajarse así:
 
 ```text
-8.1 Qué es frontend en arquitectura
-8.2 Frontend vs Backend vs API
-8.3 Por qué el frontend no debe leer SQLite directamente
-8.4 Tipos de frontend: dashboard, consola interna, admin panel
-8.5 Qué pantallas tendría sentido para flight-agent
-8.6 Estados de UI: loading, empty, error, success
-8.7 Consumo de GET /runs
-8.8 Consumo de GET /runs/{run_id}
-8.9 Consumo de GET /review-queue
-8.10 UI mínima read-only
-8.11 Validar que la UI consume la API, no la base
+concepto mínimo
+cambio pequeño en laboratorio
+validación visible en navegador
 ```
 
-## Qué NO hacer todavía
+No construir un dashboard empresarial.
+
+No meter React todavía salvo decisión explícita posterior.
+
+Usar una opción mínima local y didáctica.
+
+Opción recomendada inicial:
+
+```text
+HTML simple servido por FastAPI
+```
+
+Motivo:
+
+```text
+Permite aprender frontend como consumidor de API sin meter toolchain de React, build, npm, estados complejos ni autenticación.
+```
+
+## Puntos internos de Phase 8 como laboratorio
+
+```text
+8.1 Diseñar la UI mínima: qué pantallas necesita flight-agent
+    Laboratorio: dibujar/definir 3 secciones visibles.
+
+8.2 Crear una página HTML mínima servida desde FastAPI
+    Laboratorio: GET /dashboard devuelve HTML simple.
+
+8.3 Entender frontend vs backend vs API con algo visible
+    Laboratorio: el HTML carga en navegador, pero todavía sin datos.
+
+8.4 Consumir GET /health desde la UI
+    Laboratorio: mostrar "API OK" o "API error".
+
+8.5 Consumir GET /runs desde la UI
+    Laboratorio: renderizar tabla de corridas.
+
+8.6 Manejar estados loading, empty, error y success
+    Laboratorio: mostrar mensajes simples para cada estado.
+
+8.7 Consumir GET /runs/{run_id}
+    Laboratorio: al seleccionar una corrida, mostrar detalle.
+
+8.8 Consumir GET /review-queue
+    Laboratorio: renderizar tabla de casos pendientes.
+
+8.9 Consumir GET /offers/cheapest
+    Laboratorio: mostrar top 3 por tramo.
+
+8.10 Orden visual mínimo
+    Laboratorio: separar secciones: Runs, Review Queue, Cheapest Offers.
+
+8.11 Validar frontera arquitectónica
+    Laboratorio: confirmar que la UI llama endpoints HTTP y no SQLite.
+
+8.12 Cierre de Phase 8
+    Laboratorio: checklist final y actualización de checkpoint.md.
+```
+
+## Qué NO hacer en Phase 8
 
 ```text
 No React todavía.
-No frontend público.
 No autenticación todavía.
-No diseño visual complejo.
+No frontend público.
 No dashboard empresarial.
+No diseño visual complejo.
+No leer SQLite desde JavaScript.
+No meter lógica del agente en frontend.
+No aprobar/rechazar review_queue todavía.
 ```
 
-Opciones didácticas futuras:
-
-```text
-HTML simple
-Jinja
-Streamlit
-otra UI mínima local
-```
-
-La elección de herramienta debe hacerse cuando Phase 8 empiece.
+Eso queda para Phase 9.
 
 ---
 
@@ -903,13 +939,6 @@ Puntos internos:
 11.10 Cuándo esto sí vale la pena y cuándo es sobrearquitectura
 ```
 
-Nota:
-
-```text
-Esto es más empresarial.
-No hacerlo pronto si el concepto de API y frontend aún no está claro.
-```
-
 ---
 
 # Phase 12 — Seguridad, despliegue y operación
@@ -942,7 +971,7 @@ Nota:
 
 ```text
 Seguridad se menciona porque aparece al hablar de APIs internas/externas.
-Pero no es parte inmediata de Phase 7.
+Pero no es parte inmediata de Phase 8.
 Queda como fase futura.
 ```
 
@@ -990,6 +1019,17 @@ non_fatal_errors_count
 No cambiar ahora para no perder tiempo en refactorización.
 Solo tenerlo en cuenta para una limpieza futura.
 
+### Mover API a paquete interno
+
+Posible estructura futura:
+
+```text
+src/flight_agent/api/main.py
+src/flight_agent/api/routes.py
+```
+
+No mover todavía si el objetivo es aprender Phase 8 con el menor ruido posible.
+
 ---
 
 ## Reglas para el próximo chat
@@ -1002,7 +1042,9 @@ Cuando se retome este proyecto:
 4. No saltar a soluciones empresariales complejas antes de que el concepto esté claro.
 5. No quedarse horas afinando una fase si el concepto ya quedó aprendido.
 6. Phase 6 está cerrada.
-7. Continuar desde `Phase 7.1 — Qué es una API como frontera arquitectónica`.
-8. Mantener la dinámica: qué hacer, por qué se hace y cómo validar.
-9. No escribir código antes de cerrar la decisión conceptual de la fase.
-10. Para laboratorios técnicos, avanzar un paso por vez y esperar `siguiente`.
+7. Phase 7 está cerrada.
+8. Continuar desde `Phase 8.1 — Diseñar la UI mínima: qué pantallas necesita flight-agent`.
+9. En Phase 8, no hacer teoría pura: cada concepto debe venir con laboratorio visible.
+10. Mantener la dinámica: qué hacer, por qué se hace y cómo validar.
+11. Para laboratorios técnicos, avanzar un paso por vez y esperar `siguiente`.
+12. No implementar React, autenticación ni dashboard empresarial todavía.
