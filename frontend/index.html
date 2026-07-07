@@ -32,6 +32,14 @@
             margin: 8px 0 12px 0;
             font-weight: bold;
         }
+
+        .controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin: 8px 0 12px 0;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -47,6 +55,28 @@
     <div id="runs-list"></div>
 
     <h2>Ofertas más baratas</h2>
+
+    <div class="controls">
+        <label for="offers-limit">Cantidad por tramo:</label>
+        <select id="offers-limit">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+        </select>
+
+        <label>
+            <input type="checkbox" id="offers-unique-airline">
+            máximo 1 oferta por aerolínea
+        </label>
+    </div>
+
     <p id="offers-status" class="status-message">Cargando ofertas...</p>
     <div id="offers-list"></div>
 
@@ -150,6 +180,13 @@
         }
     }
 
+    function buildOffersUrl() {
+        const limit = document.getElementById("offers-limit").value;
+        const uniqueAirline = document.getElementById("offers-unique-airline").checked;
+
+        return "http://127.0.0.1:8000/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + uniqueAirline;
+    }
+
     async function cargarOffers() {
         const offersStatus = document.getElementById("offers-status");
         const offersList = document.getElementById("offers-list");
@@ -158,7 +195,7 @@
         offersList.innerHTML = "";
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/offers/cheapest?window=7d&limit=3");
+            const response = await fetch(buildOffersUrl());
 
             if (!response.ok) {
                 offersStatus.textContent = "Error: la API respondió con status " + response.status;
@@ -172,7 +209,8 @@
                 return;
             }
 
-            offersStatus.textContent = "Ofertas cargadas por tramos: " + data.routes.length;
+            const modo = data.unique_airline ? "1 por aerolínea" : "normal";
+            offersStatus.textContent = "Ofertas cargadas por tramos: " + data.routes.length + " | límite: " + data.limit_per_route + " | modo: " + modo;
 
             data.routes.forEach(function(routeGroup) {
                 const routeTitle = document.createElement("h3");
@@ -185,6 +223,7 @@
                 thead.innerHTML = `
                     <tr>
                         <th>Aerolínea</th>
+                        <th>Low cost</th>
                         <th>Vuelo</th>
                         <th>Precio</th>
                         <th>Escalas</th>
@@ -198,9 +237,11 @@
 
                 routeGroup.offers.forEach(function(offer) {
                     const row = document.createElement("tr");
+                    const lowCostText = offer.is_low_cost ? "Sí" : "No";
 
                     row.innerHTML = `
                         <td>${offer.airline}</td>
+                        <td>${lowCostText}</td>
                         <td>${offer.flight_number}</td>
                         <td class="price">${offer.price}</td>
                         <td>${offer.stops}</td>
@@ -219,6 +260,9 @@
             console.error(error);
         }
     }
+
+    document.getElementById("offers-limit").addEventListener("change", cargarOffers);
+    document.getElementById("offers-unique-airline").addEventListener("change", cargarOffers);
 
     cargarHealth();
     cargarRuns();
