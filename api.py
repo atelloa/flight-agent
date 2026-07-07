@@ -1,6 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.flight_agent import (
+    enrich_offer_with_airline_metadata,
+    normalize_airline_name,
+)
 from src.flight_agent.persistence.db import (
     get_agent_runs,
     get_agent_run,
@@ -8,33 +12,6 @@ from src.flight_agent.persistence.db import (
     get_cheapest_offers,
     get_cheapest_offers_for_all_routes,
 )
-
-LOW_COST_AIRLINES = {
-    "easyjet",
-    "flybondi",
-    "french bee",
-    "frontier",
-    "frontier airlines",
-    "iberia express",
-    "jet smart",
-    "jetsmart",
-    "level",
-    "norse atlantic",
-    "norse atlantic airways",
-    "norwegian",
-    "play",
-    "ryanair",
-    "sky",
-    "sky airline",
-    "sky airlines",
-    "spirit",
-    "spirit airlines",
-    "viva aerobus",
-    "viva air",
-    "volaris",
-    "vueling",
-    "wizz air",
-}
 
 app = FastAPI(title="Flight Agent API")
 
@@ -68,27 +45,6 @@ def validate_limit(limit: int) -> None:
         )
 
 
-def normalize_airline_name(airline: str | None) -> str:
-    if airline is None:
-        return ""
-
-    return " ".join(airline.strip().lower().split())
-
-
-def is_low_cost_airline(airline: str | None) -> bool:
-    return normalize_airline_name(airline) in LOW_COST_AIRLINES
-
-
-def enrich_offer(offer: dict) -> dict:
-    enriched_offer = dict(offer)
-    low_cost = is_low_cost_airline(enriched_offer.get("airline"))
-
-    enriched_offer["is_low_cost"] = low_cost
-    enriched_offer["airline_type"] = "low_cost" if low_cost else "standard_or_unknown"
-
-    return enriched_offer
-
-
 def apply_offer_filters(offers: list, limit: int, unique_airline: bool) -> list:
     selected_offers = []
     seen_airlines = set()
@@ -102,7 +58,7 @@ def apply_offer_filters(offers: list, limit: int, unique_airline: bool) -> list:
 
             seen_airlines.add(airline_key)
 
-        selected_offers.append(enrich_offer(offer))
+        selected_offers.append(enrich_offer_with_airline_metadata(offer))
 
         if len(selected_offers) >= limit:
             break
