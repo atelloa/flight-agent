@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.flight_agent import (
+from src.flight_agent.catalogs.airlines import (
     enrich_offer_with_airline_metadata,
     normalize_airline_name,
 )
