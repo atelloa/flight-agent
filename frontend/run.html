@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flight Agent - Run Detail</title>
+</head>
+<body>
+    <h1>Detalle de corrida</h1>
+
+    <p><a href="index.html">Volver al inicio</a></p>
+
+    <h2>Run</h2>
+    <pre id="run-detail">Cargando detalle...</pre>
+
+    <script>
+        async function cargarRunDetail() {
+            const detailElement = document.getElementById("run-detail");
+
+            const params = new URLSearchParams(window.location.search);
+            const runId = params.get("run_id");
+
+            if (!runId) {
+                detailElement.textContent = "No se recibió run_id.";
+                return;
+            }
+
+            try {
+                const response = await fetch("http://127.0.0.1:8000/runs/" + runId);
+
+                if (!response.ok) {
+                    detailElement.textContent = "No se encontró la corrida: " + runId;
+                    return;
+                }
+
+                const run = await response.json();
+
+                detailElement.textContent = JSON.stringify(run, null, 2);
+            } catch (error) {
+                detailElement.textContent = "No se pudo conectar con la API.";
+                console.error(error);
+            }
+        }
+
+        cargarRunDetail();
+    </script>
+</body>
+</html>

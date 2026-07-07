@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 from src.flight_agent.persistence.db import (
     get_agent_runs,
     get_agent_run,
@@ -9,6 +11,16 @@ from src.flight_agent.persistence.db import (
 
 app = FastAPI(title="Flight Agent API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 @app.get("/health")
 def health():

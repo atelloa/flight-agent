@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flight Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 24px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .price {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flight Agent</h1>
+
+    <p>UI mínima del agente de monitoreo de vuelos.</p>
+
+    <h2>Estado de la API</h2>
+    <p id="api-status">Consultando API...</p>
+
+    <h2>Últimas corridas</h2>
+    <div id="runs-list">
+        Cargando corridas...
+    </div>
+
+    <h2>Ofertas más baratas</h2>
+    <div id="offers-list">
+        Cargando ofertas...
+    </div>
+
+    <h2>Secciones</h2>
+
+    <ul>
+        <li><a href="http://127.0.0.1:8000/health">Health JSON</a></li>
+        <li><a href="http://127.0.0.1:8000/runs">Runs JSON</a></li>
+        <li><a href="http://127.0.0.1:8000/offers/cheapest?window=7d&limit=3">Ofertas más baratas JSON</a></li>
+        <li><a href="http://127.0.0.1:8000/review-queue">Review queue JSON</a></li>
+    </ul>
+
+<script>
+    async function cargarHealth() {
+        const statusElement = document.getElementById("api-status");
+
+        try {
+            const response = await fetch("http://127.0.0.1:8000/health");
+            const data = await response.json();
+
+            statusElement.textContent = "API status: " + data.status;
+        } catch (error) {
+            statusElement.textContent = "No se pudo conectar con la API.";
+            console.error(error);
+        }
+    }
+
+    async function cargarRuns() {
+        const runsList = document.getElementById("runs-list");
+
+        try {
+            const response = await fetch("http://127.0.0.1:8000/runs");
+            const runs = await response.json();
+
+            runsList.innerHTML = "";
+
+            if (runs.length === 0) {
+                runsList.textContent = "No hay corridas registradas.";
+                return;
+            }
+
+            const ultimasRuns = runs.slice(0, 5);
+
+            const table = document.createElement("table");
+
+            const thead = document.createElement("thead");
+            thead.innerHTML = `
+                <tr>
+                    <th>Run ID</th>
+                    <th>Status</th>
+                    <th>Duración</th>
+                    <th>Fetch mode</th>
+                    <th>Claude mode</th>
+                    <th>Vuelos</th>
+                    <th>Alertas</th>
+                    <th>Errores no fatales</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            const tbody = document.createElement("tbody");
+
+            ultimasRuns.forEach(function(run) {
+                const row = document.createElement("tr");
+
+                row.innerHTML = `
+                    <td><a href="run.html?run_id=${run.run_id}">${run.run_id}</a></td>
+                    <td>${run.status}</td>
+                    <td>${run.duration_seconds}s</td>
+                    <td>${run.fetch_mode}</td>
+                    <td>${run.claude_mode}</td>
+                    <td>${run.flights_found}</td>
+                    <td>${run.alerts_generated}</td>
+                    <td>${run.recoverable_errors_count}</td>
+                `;
+
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(tbody);
+            runsList.appendChild(table);
+        } catch (error) {
+            runsList.textContent = "No se pudieron cargar las corridas.";
+            console.error(error);
+        }
+    }
+
+    async function cargarOffers() {
+        const offersList = document.getElementById("offers-list");
+
+        try {
+            const response = await fetch("http://127.0.0.1:8000/offers/cheapest?window=7d&limit=3");
+            const data = await response.json();
+
+            offersList.innerHTML = "";
+
+            if (data.routes.length === 0) {
+                offersList.textContent = "No hay ofertas registradas.";
+                return;
+            }
+
+            data.routes.forEach(function(routeGroup) {
+                const routeTitle = document.createElement("h3");
+                routeTitle.textContent = routeGroup.route;
+                offersList.appendChild(routeTitle);
+
+                const table = document.createElement("table");
+
+                const thead = document.createElement("thead");
+                thead.innerHTML = `
+                    <tr>
+                        <th>Aerolínea</th>
+                        <th>Vuelo</th>
+                        <th>Precio</th>
+                        <th>Escalas</th>
+                        <th>Salida</th>
+                        <th>Capturado</th>
+                    </tr>
+                `;
+                table.appendChild(thead);
+
+                const tbody = document.createElement("tbody");
+
+                routeGroup.offers.forEach(function(offer) {
+                    const row = document.createElement("tr");
+
+                    row.innerHTML = `
+                        <td>${offer.airline}</td>
+                        <td>${offer.flight_number}</td>
+                        <td class="price">${offer.price}</td>
+                        <td>${offer.stops}</td>
+                        <td>${offer.departure_date}</td>
+                        <td>${offer.captured_at}</td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+                table.appendChild(tbody);
+                offersList.appendChild(table);
+            });
+        } catch (error) {
+            offersList.textContent = "No se pudieron cargar las ofertas.";
+            console.error(error);
+        }
+    }
+
+    cargarHealth();
+    cargarRuns();
+    cargarOffers();
+</script>
+</body>
+</html>
