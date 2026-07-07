@@ -27,6 +27,11 @@
         .price {
             font-weight: bold;
         }
+
+        .status-message {
+            margin: 8px 0 12px 0;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -35,17 +40,15 @@
     <p>UI mínima del agente de monitoreo de vuelos.</p>
 
     <h2>Estado de la API</h2>
-    <p id="api-status">Consultando API...</p>
+    <p id="api-status" class="status-message">Consultando API...</p>
 
     <h2>Últimas corridas</h2>
-    <div id="runs-list">
-        Cargando corridas...
-    </div>
+    <p id="runs-status" class="status-message">Cargando corridas...</p>
+    <div id="runs-list"></div>
 
     <h2>Ofertas más baratas</h2>
-    <div id="offers-list">
-        Cargando ofertas...
-    </div>
+    <p id="offers-status" class="status-message">Cargando ofertas...</p>
+    <div id="offers-list"></div>
 
     <h2>Secciones</h2>
 
@@ -60,32 +63,48 @@
     async function cargarHealth() {
         const statusElement = document.getElementById("api-status");
 
+        statusElement.textContent = "Consultando API...";
+
         try {
             const response = await fetch("http://127.0.0.1:8000/health");
-            const data = await response.json();
 
-            statusElement.textContent = "API status: " + data.status;
+            if (!response.ok) {
+                statusElement.textContent = "API error: status HTTP " + response.status;
+                return;
+            }
+
+            const data = await response.json();
+            statusElement.textContent = "API OK: " + data.status;
         } catch (error) {
-            statusElement.textContent = "No se pudo conectar con la API.";
+            statusElement.textContent = "API error: no se pudo conectar.";
             console.error(error);
         }
     }
 
     async function cargarRuns() {
+        const runsStatus = document.getElementById("runs-status");
         const runsList = document.getElementById("runs-list");
+
+        runsStatus.textContent = "Cargando corridas...";
+        runsList.innerHTML = "";
 
         try {
             const response = await fetch("http://127.0.0.1:8000/runs");
+
+            if (!response.ok) {
+                runsStatus.textContent = "Error: la API respondió con status " + response.status;
+                return;
+            }
+
             const runs = await response.json();
 
-            runsList.innerHTML = "";
-
             if (runs.length === 0) {
-                runsList.textContent = "No hay corridas registradas.";
+                runsStatus.textContent = "No hay corridas registradas.";
                 return;
             }
 
             const ultimasRuns = runs.slice(0, 5);
+            runsStatus.textContent = "Corridas cargadas: " + ultimasRuns.length;
 
             const table = document.createElement("table");
 
@@ -126,24 +145,34 @@
             table.appendChild(tbody);
             runsList.appendChild(table);
         } catch (error) {
-            runsList.textContent = "No se pudieron cargar las corridas.";
+            runsStatus.textContent = "Error: no se pudieron cargar las corridas.";
             console.error(error);
         }
     }
 
     async function cargarOffers() {
+        const offersStatus = document.getElementById("offers-status");
         const offersList = document.getElementById("offers-list");
+
+        offersStatus.textContent = "Cargando ofertas...";
+        offersList.innerHTML = "";
 
         try {
             const response = await fetch("http://127.0.0.1:8000/offers/cheapest?window=7d&limit=3");
-            const data = await response.json();
 
-            offersList.innerHTML = "";
-
-            if (data.routes.length === 0) {
-                offersList.textContent = "No hay ofertas registradas.";
+            if (!response.ok) {
+                offersStatus.textContent = "Error: la API respondió con status " + response.status;
                 return;
             }
+
+            const data = await response.json();
+
+            if (data.routes.length === 0) {
+                offersStatus.textContent = "No hay ofertas registradas.";
+                return;
+            }
+
+            offersStatus.textContent = "Ofertas cargadas por tramos: " + data.routes.length;
 
             data.routes.forEach(function(routeGroup) {
                 const routeTitle = document.createElement("h3");
@@ -186,7 +215,7 @@
                 offersList.appendChild(table);
             });
         } catch (error) {
-            offersList.textContent = "No se pudieron cargar las ofertas.";
+            offersStatus.textContent = "Error: no se pudieron cargar las ofertas.";
             console.error(error);
         }
     }
