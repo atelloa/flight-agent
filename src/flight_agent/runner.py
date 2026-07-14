@@ -4,7 +4,12 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.flight_agent.graph import compiled_graph
-from src.flight_agent.persistence.db import create_tables, save_agent_run
+from src.flight_agent.persistence.agent_runs import (
+    finish_agent_run,
+    migrate_legacy_agent_run_statuses,
+    start_agent_run,
+)
+from src.flight_agent.persistence.db import create_tables
 from src.flight_agent.state import FlightMonitorState
 
 
@@ -55,31 +60,39 @@ def validate_config_overrides(config_overrides: dict | None) -> dict:
 class AgentRunner:
     """Executes one full flight-agent run.
 
-    This class is the application-level runner used by different entry points,
-    such as the CLI today and the API in a later phase.
+    This application-level runner is shared by entry points such as the CLI,
+    the API and, in a future sprint, a background worker.
     """
 
     def run(
         self,
         config_overrides: dict | None = None,
         raise_on_error: bool = True,
+        run_id: str | None = None,
     ) -> AgentRunResult:
         validated_overrides = validate_config_overrides(config_overrides)
         create_tables()
+        migrate_legacy_agent_run_statuses()
 
         state = FlightMonitorState()
-        state.run_id = str(uuid4())[:8]
+        state.run_id = run_id or str(uuid4())[:8]
         state.config_overrides = validated_overrides
 
         started_at = datetime.now()
+        start_agent_run(
+            run_id=state.run_id,
+            started_at=str(started_at),
+        )
+
         run_start = perf_counter()
         result = None
-        run_status = "success"
+        run_status = "running"
         error_message = None
         captured_error = None
 
         try:
             result = compiled_graph.invoke(state)
+            run_status = "completed"
 
         except Exception as error:
             run_status = "failed"
@@ -104,9 +117,8 @@ class AgentRunner:
                 for key in OVERRIDABLE_CONFIG_KEYS
             }
 
-            save_agent_run(
+            finish_agent_run(
                 run_id=state.run_id,
-                started_at=str(started_at),
                 finished_at=str(finished_at),
                 status=run_status,
                 duration_seconds=run_duration,
@@ -140,8 +152,10 @@ class AgentRunner:
 def run_agent(
     config_overrides: dict | None = None,
     raise_on_error: bool = True,
+    run_id: str | None = None,
 ) -> AgentRunResult:
     return AgentRunner().run(
         config_overrides=config_overrides,
         raise_on_error=raise_on_error,
+        run_id=run_id,
     )
