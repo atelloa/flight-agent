@@ -48,7 +48,62 @@ easier to debug
 
 ---
 
-## 3. High-Level Flow
+## 3. System Views
+
+The architecture is shown with two complementary views:
+
+```text
+System Architecture
+  who enters the system and which component calls which
+
+Agent Workflow
+  what happens inside LangGraph during one run
+```
+
+### 3.1 System Architecture
+
+```mermaid
+flowchart LR
+    U["ACTOR<br/>User"]
+    CLI["ENTRY POINT<br/>main.py"]
+    FE["UI<br/>Static Frontend"]
+    API["ENTRY POINT<br/>FastAPI api.py"]
+    RUNNER["APPLICATION<br/>AgentRunner"]
+    GRAPH["WORKFLOW<br/>LangGraph"]
+    DB[("PERSISTENCE<br/>SQLite")]
+
+    U --> CLI
+    U --> FE
+
+    CLI --> RUNNER
+    FE --> API
+
+    API -->|POST /runs| RUNNER
+    API -->|GET endpoints| DB
+
+    RUNNER --> GRAPH
+    GRAPH --> DB
+
+    classDef actor fill:#ECEFF1,stroke:#455A64,color:#263238;
+    classDef entry fill:#DCEBFF,stroke:#005AB5,color:#002F6C;
+    classDef ui fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C;
+    classDef application fill:#FFF4B8,stroke:#8A6D00,color:#4D3D00;
+    classDef workflow fill:#FFE8CC,stroke:#D55E00,color:#7A2E00;
+    classDef persistence fill:#DFF5EA,stroke:#007A4D,color:#004D31;
+
+    class U actor;
+    class CLI,API entry;
+    class FE ui;
+    class RUNNER application;
+    class GRAPH workflow;
+    class DB persistence;
+```
+
+`main.py` and `api.py` are entry points. They do not own the internal execution logic. Both delegate agent execution to `AgentRunner`, while the read endpoints query SQLite without executing LangGraph.
+
+### 3.2 Agent Workflow
+
+This view starts after `AgentRunner` invokes LangGraph.
 
 ```mermaid
 flowchart TD
@@ -100,20 +155,6 @@ Diagram legend:
 | `END` label + gray style | Terminal state | END |
 
 Important detail: `claude_analysis` is currently always present in the graph, but it only processes alerts with `tipo = ambiguous`. If there are no ambiguous cases, it exits without calling Claude.
-
-### Application entry points
-
-The execution logic is shared by the CLI and the API through `AgentRunner`:
-
-```text
-main.py -> AgentRunner -> LangGraph -> SQLite
-
-POST /runs -> FastAPI -> AgentRunner -> LangGraph -> SQLite
-
-Frontend / GET endpoints -> FastAPI -> SQLite
-```
-
-`main.py` and `api.py` are entry points. They do not own the internal execution logic of the agent.
 
 ---
 
