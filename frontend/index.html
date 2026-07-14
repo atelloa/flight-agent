@@ -157,13 +157,18 @@
 
             ultimasRuns.forEach(function(run) {
                 const row = document.createElement("tr");
+                const duration = run.duration_seconds === null
+                    ? "-"
+                    : run.duration_seconds + "s";
+                const fetchMode = run.fetch_mode ?? "-";
+                const claudeMode = run.claude_mode ?? "-";
 
                 row.innerHTML = `
                     <td><a href="run.html?run_id=${run.run_id}">${run.run_id}</a></td>
                     <td>${run.status}</td>
-                    <td>${run.duration_seconds}s</td>
-                    <td>${run.fetch_mode}</td>
-                    <td>${run.claude_mode}</td>
+                    <td>${duration}</td>
+                    <td>${fetchMode}</td>
+                    <td>${claudeMode}</td>
                     <td>${run.flights_found}</td>
                     <td>${run.alerts_generated}</td>
                     <td>${run.recoverable_errors_count}</td>
