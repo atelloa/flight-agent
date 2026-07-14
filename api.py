@@ -1,5 +1,9 @@
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.flight_agent.catalogs.airlines import (
     enrich_offer_with_airline_metadata,
@@ -12,6 +16,27 @@ from src.flight_agent.persistence.db import (
     get_cheapest_offers,
     get_cheapest_offers_for_all_routes,
 )
+from src.flight_agent.runner import run_agent
+
+
+class RunOverrides(BaseModel):
+    """Temporary configuration overrides for one agent run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fetch_mode: Literal["cached", "live"] | None = None
+    claude_mode: Literal["mock", "live"] | None = None
+    telegram_enabled: bool | None = None
+    review_mode: bool | None = None
+
+
+class RunRequest(BaseModel):
+    """Request body for starting one agent run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overrides: RunOverrides = Field(default_factory=RunOverrides)
+
 
 app = FastAPI(title="Flight Agent API")
 
@@ -22,7 +47,7 @@ app.add_middleware(
         "http://localhost:5500",
     ],
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -74,6 +99,39 @@ def health():
 @app.get("/runs")
 def list_runs():
     return get_agent_runs()
+
+
+@app.post("/runs")
+def create_run(request: RunRequest | None = None):
+    overrides = (
+        request.overrides.model_dump(exclude_none=True)
+        if request is not None
+        else {}
+    )
+
+    try:
+        run_result = run_agent(
+            config_overrides=overrides,
+            raise_on_error=False,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    response = {
+        "run_id": run_result.run_id,
+        "status": run_result.status,
+        "duration_seconds": run_result.duration_seconds,
+        "flights_found": run_result.flights_found,
+        "alerts_generated": run_result.alerts_generated,
+        "recoverable_errors_count": run_result.recoverable_errors_count,
+        "effective_config": run_result.effective_config,
+        "error_message": run_result.error_message,
+    }
+
+    if run_result.status == "failed":
+        return JSONResponse(status_code=500, content=response)
+
+    return response
 
 
 @app.get("/runs/{run_id}")
