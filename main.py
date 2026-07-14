@@ -1,7 +1,18 @@
-from src.flight_agent.runner import create_run_id, run_agent
+from src.flight_agent.runner import AgentRunResult, run_agent
 
 
-def print_summary(result: dict) -> None:
+def print_summary(run_result: AgentRunResult) -> None:
+    print(f"\n[RUN {run_result.run_id}] status={run_result.status} duracion_total={run_result.duration_seconds:.2f}s")
+
+    if run_result.status == "failed":
+        print(f"Error fatal: {run_result.error_message}")
+        return
+
+    result = run_result.result
+    if result is None:
+        print("No se genero resultado final.")
+        return
+
     print(f"\n{'='*50}")
     print("RESUMEN FINAL")
     print(f"{'='*50}")
@@ -18,25 +29,9 @@ def print_summary(result: dict) -> None:
             print(f"- [{error['node']}] {error['type']}: {error['message']}")
 
 
-def main() -> None:
-    run_id = create_run_id()
-    print(f"[RUN] run_id: {run_id}")
-
-    try:
-        agent_run = run_agent(run_id=run_id)
-    except Exception as error:
-        print(f"\n[RUN {run_id}] error={error}")
-        raise
-
-    print(
-        f"\n[RUN {agent_run.run_id}] "
-        f"status={agent_run.status} "
-        f"duracion_total={agent_run.duration_seconds:.2f}s"
-    )
-
-    if agent_run.state:
-        print_summary(agent_run.state)
-
-
 if __name__ == "__main__":
-    main()
+    run_result = run_agent(raise_on_error=False)
+    print_summary(run_result)
+
+    if run_result.status == "failed":
+        raise SystemExit(1)
