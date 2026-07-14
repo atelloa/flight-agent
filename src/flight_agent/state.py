@@ -22,7 +22,10 @@ class FlightMonitorState:
     # Config por ruta - se carga desde config/routes.yaml
     routes_config: Dict = field(default_factory=dict)
 
-    # Config global - se carga desde config/routes.yaml
+    # Overrides temporales para una sola corrida
+    config_overrides: Dict = field(default_factory=dict)
+
+    # Config global efectiva - base YAML + overrides de la corrida
     global_config: Dict = field(default_factory=lambda: {
         "date_range": 3,
         "preferred_dates": {},
