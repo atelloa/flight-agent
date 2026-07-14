@@ -61,7 +61,8 @@ flowchart TD
     G --> H["NODE<br/>Send Alert"]
     H --> I["END"]
 
-    CFG[["CONFIG<br/>config/routes.yaml"]] -. runtime modes .-> A
+    CFG[["CONFIG<br/>config/routes.yaml"]] -. base runtime modes .-> A
+    OVR[["CONFIG<br/>Per-run overrides"]] -. temporary precedence .-> A
     ST[("STATE<br/>FlightMonitorState")] -. shared runtime state .-> B
     B -. fetch_mode live .-> S["TOOL<br/>SerpAPI"]
     B -. fetch_mode cached .-> DB[("PERSISTENCE<br/>SQLite Cache")]
@@ -80,7 +81,7 @@ flowchart TD
     class A,B,C,D,E,F,G,H node;
     class S,L,M tool;
     class DB persistence;
-    class CFG,ST runtime;
+    class CFG,OVR,ST runtime;
     class T,N output;
     class I terminal;
 ```
@@ -94,17 +95,31 @@ Diagram legend:
 | `NODE` label + blue style | LangGraph nodes / workflow steps | `load_config`, `fetch_flights`, `claude_analysis` |
 | `TOOL` label + orange style | External tools or simulated tool behavior | SerpAPI, Claude API, mock decision |
 | `PERSISTENCE` label + green style | Durable memory / data access | SQLite cache |
-| `CONFIG` / `STATE` label + yellow style | Runtime configuration and temporary state | `config/routes.yaml`, `FlightMonitorState` |
+| `CONFIG` / `STATE` label + yellow style | Base config, temporary overrides and runtime state | `config/routes.yaml`, per-run overrides, `FlightMonitorState` |
 | `OUTPUT` label + red style | External output or skipped external output | Telegram, no external message |
 | `END` label + gray style | Terminal state | END |
 
 Important detail: `claude_analysis` is currently always present in the graph, but it only processes alerts with `tipo = ambiguous`. If there are no ambiguous cases, it exits without calling Claude.
 
+### Application entry points
+
+The execution logic is shared by the CLI and the API through `AgentRunner`:
+
+```text
+main.py -> AgentRunner -> LangGraph -> SQLite
+
+POST /runs -> FastAPI -> AgentRunner -> LangGraph -> SQLite
+
+Frontend / GET endpoints -> FastAPI -> SQLite
+```
+
+`main.py` and `api.py` are entry points. They do not own the internal execution logic of the agent.
+
 ---
 
 ## 4. Main Runtime Modes
 
-The system can run in different modes using `config/routes.yaml`.
+The base runtime modes are stored in `config/routes.yaml`.
 
 ```yaml
 global:
@@ -131,6 +146,33 @@ telegram_enabled: false
 
 This allows testing the full pipeline without spending SerpAPI, without spending Claude, and without sending Telegram messages.
 
+### Per-run overrides
+
+`POST /runs` can receive optional overrides for one execution:
+
+```json
+{
+  "overrides": {
+    "fetch_mode": "cached",
+    "claude_mode": "mock",
+    "telegram_enabled": false,
+    "review_mode": true
+  }
+}
+```
+
+The effective configuration is built in this order:
+
+```text
+config/routes.yaml
+    + temporary request overrides
+    = effective configuration for one run
+```
+
+The request does not modify `routes.yaml`. `AgentRunner` validates and transports the overrides in `state.config_overrides`; `load_config` loads the YAML first and applies the overrides afterward.
+
+The API returns `effective_config` so the caller can verify the modes actually used by the run.
+
 ---
 
 ## 5. State vs Persistence
@@ -149,6 +191,7 @@ rule_matches
 suspicious_cases
 alerts_to_send
 global_config
+config_overrides
 ```
 
 It lives in RAM and disappears when the program finishes.
@@ -163,7 +206,10 @@ Examples:
 flights
 decisions
 review_queue
+agent_runs
 ```
+
+`agent_runs` stores the execution summary and runtime modes. Decisions and review queue records keep the related `run_id` for traceability.
 
 SQLite is also used as a simple local cache by reading the latest flight snapshot.
 
@@ -195,15 +241,36 @@ This design keeps the rest of the graph independent from the source of data.
 
 | Component | Responsibility |
 |---|---|
-| `state.py` | Defines the temporary state and `Flight` model |
+| `main.py` | CLI entry point; calls `AgentRunner` and prints the run summary |
+| `api.py` | FastAPI entry point; validates HTTP requests and exposes read and execution endpoints |
+| `runner.py` | Application-level execution boundary shared by CLI and API |
+| `state.py` | Defines temporary state, per-run overrides and the `Flight` model |
 | `graph.py` | Connects nodes using LangGraph |
-| `nodes/load_config.py` | Loads YAML configuration into state |
+| `nodes/load_config.py` | Loads base YAML configuration and applies temporary overrides |
 | `nodes/fetch_flights.py` | Loads flights from SerpAPI or SQLite cache |
 | `nodes/nodes.py` | Stores snapshots, evaluates rules, routes decisions and sends alerts |
 | `nodes/claude_analysis.py` | Uses Claude or mock mode for ambiguous cases |
 | `tools/claude_tool.py` | Calls Claude API and parses structured output |
-| `persistence/db.py` | Encapsulates SQLite persistence |
-| `config/routes.yaml` | Single source of truth for routes and runtime modes |
+| `persistence/db.py` | Encapsulates SQLite persistence and read queries used by the API |
+| `catalogs/airlines.py` | Adds reference metadata to airline offers returned by the API |
+| `frontend/` | Static interface that consumes the read endpoints |
+| `config/routes.yaml` | Base source of truth for routes and runtime modes |
+
+### API boundary
+
+The API has two kinds of operations:
+
+```text
+GET endpoints
+  read persisted runs, review queue and flight offers
+
+POST /runs
+  validates a RunRequest with Pydantic
+  delegates execution to AgentRunner
+  returns a run summary and effective_config
+```
+
+Pydantic models define the allowed request fields and reject invalid values before the graph executes. `AgentRunner` also validates overrides so the same rule applies to future entry points such as a scheduler.
 
 ---
 
@@ -271,26 +338,35 @@ Operational meaning:
 
 ```text
 flight-agent/
+├── api.py
 ├── architecture.md
 ├── checkpoint.md
+├── main.py
 ├── config/
 │   └── routes.yaml
 ├── data/
 │   └── flight_agent.sqlite
-├── src/
-│   └── flight_agent/
-│       ├── graph.py
-│       ├── state.py
-│       ├── nodes/
-│       │   ├── load_config.py
-│       │   ├── fetch_flights.py
-│       │   ├── claude_analysis.py
-│       │   └── nodes.py
-│       ├── tools/
-│       │   └── claude_tool.py
-│       └── persistence/
-│           └── db.py
-└── main.py
+├── frontend/
+│   ├── index.html
+│   └── run.html
+└── src/
+    └── flight_agent/
+        ├── graph.py
+        ├── runner.py
+        ├── state.py
+        ├── catalogs/
+        │   └── airlines.py
+        ├── nodes/
+        │   ├── load_config.py
+        │   ├── fetch_flights.py
+        │   ├── claude_analysis.py
+        │   └── nodes.py
+        ├── observability/
+        │   └── logging.py
+        ├── tools/
+        │   └── claude_tool.py
+        └── persistence/
+            └── db.py
 ```
 
 ---
@@ -304,23 +380,38 @@ flight-agent/
 5. Avoid spending APIs during local lab runs.
 6. Keep documentation didactic, not exhaustive.
 7. Refactor structure only when it clarifies architecture.
+8. Keep entry points thin and delegate execution to `AgentRunner`.
+9. Treat `routes.yaml` as base configuration and overrides as temporary per-run input.
+10. Validate external input before executing the graph.
 
 ---
 
-## 12. Next Architectural Step
+## 12. Current Execution Boundary and Next Step
 
-Phase 6 should focus on observability:
+The current API execution is synchronous:
 
 ```text
-run_id
-node-level logs
-execution timing
-external call counts
-errors by node
-traceable decisions
+POST /runs
+  -> FastAPI validates the request
+  -> AgentRunner executes the graph
+  -> the HTTP request waits
+  -> the API returns the final summary
 ```
 
-A later improvement is to replace the current always-connected `claude_analysis` node with a true conditional LangGraph branch:
+This is sufficient for the current local laboratory because runs are short and normally use `cached` and `mock` modes.
+
+Its known limitation is that the HTTP request remains open during the complete agent execution. If runs become long or concurrent, the next architectural evolution is to represent executions as jobs:
+
+```text
+queued
+running
+completed
+failed
+```
+
+That future design would separate HTTP request handling from execution through a worker or scheduler. Redis, Celery or another queue are not required yet and have not been added.
+
+A separate deferred improvement is to replace the always-connected `claude_analysis` node with a true conditional LangGraph branch:
 
 ```text
 if ambiguous cases exist -> claude_analysis
