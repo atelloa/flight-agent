@@ -8,6 +8,14 @@ from src.flight_agent.persistence.db import create_tables, save_agent_run
 from src.flight_agent.state import FlightMonitorState
 
 
+OVERRIDABLE_CONFIG_KEYS = {
+    "fetch_mode",
+    "claude_mode",
+    "telegram_enabled",
+    "review_mode",
+}
+
+
 @dataclass
 class AgentRunResult:
     run_id: str
@@ -16,8 +24,32 @@ class AgentRunResult:
     flights_found: int
     alerts_generated: int
     recoverable_errors_count: int
+    effective_config: dict
     error_message: str | None
     result: dict | None
+
+
+def validate_config_overrides(config_overrides: dict | None) -> dict:
+    overrides = dict(config_overrides or {})
+
+    unknown_keys = set(overrides) - OVERRIDABLE_CONFIG_KEYS
+    if unknown_keys:
+        unknown = ", ".join(sorted(unknown_keys))
+        raise ValueError(f"Overrides no permitidos: {unknown}")
+
+    fetch_mode = overrides.get("fetch_mode")
+    if fetch_mode is not None and fetch_mode not in {"cached", "live"}:
+        raise ValueError("fetch_mode debe ser 'cached' o 'live'")
+
+    claude_mode = overrides.get("claude_mode")
+    if claude_mode is not None and claude_mode not in {"mock", "live"}:
+        raise ValueError("claude_mode debe ser 'mock' o 'live'")
+
+    for boolean_key in ("telegram_enabled", "review_mode"):
+        if boolean_key in overrides and type(overrides[boolean_key]) is not bool:
+            raise ValueError(f"{boolean_key} debe ser true o false")
+
+    return overrides
 
 
 class AgentRunner:
@@ -27,11 +59,17 @@ class AgentRunner:
     such as the CLI today and the API in a later phase.
     """
 
-    def run(self, raise_on_error: bool = True) -> AgentRunResult:
+    def run(
+        self,
+        config_overrides: dict | None = None,
+        raise_on_error: bool = True,
+    ) -> AgentRunResult:
+        validated_overrides = validate_config_overrides(config_overrides)
         create_tables()
 
         state = FlightMonitorState()
         state.run_id = str(uuid4())[:8]
+        state.config_overrides = validated_overrides
 
         started_at = datetime.now()
         run_start = perf_counter()
@@ -61,6 +99,11 @@ class AgentRunner:
                 flights_found = 0
                 alerts_generated = 0
 
+            effective_config = {
+                key: state.global_config.get(key)
+                for key in OVERRIDABLE_CONFIG_KEYS
+            }
+
             save_agent_run(
                 run_id=state.run_id,
                 started_at=str(started_at),
@@ -83,6 +126,7 @@ class AgentRunner:
             flights_found=flights_found,
             alerts_generated=alerts_generated,
             recoverable_errors_count=recoverable_errors_count,
+            effective_config=effective_config,
             error_message=error_message,
             result=result,
         )
@@ -93,5 +137,11 @@ class AgentRunner:
         return run_result
 
 
-def run_agent(raise_on_error: bool = True) -> AgentRunResult:
-    return AgentRunner().run(raise_on_error=raise_on_error)
+def run_agent(
+    config_overrides: dict | None = None,
+    raise_on_error: bool = True,
+) -> AgentRunResult:
+    return AgentRunner().run(
+        config_overrides=config_overrides,
+        raise_on_error=raise_on_error,
+    )
