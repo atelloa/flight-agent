@@ -19,10 +19,13 @@ class Flight:
 class FlightMonitorState:
     """Expediente completo del agente de monitoreo"""
 
-    # Config por ruta - se carga desde config/routes.yaml
+    # Config efectiva por ruta para esta corrida
     routes_config: Dict = field(default_factory=dict)
 
-    # Overrides temporales para una sola corrida
+    # Reemplazo temporal de las rutas base para una sola corrida
+    routes_overrides: Dict = field(default_factory=dict)
+
+    # Overrides temporales de modos globales para una sola corrida
     config_overrides: Dict = field(default_factory=dict)
 
     # Config global efectiva - base YAML + overrides de la corrida
