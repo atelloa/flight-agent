@@ -185,6 +185,7 @@ class AgentRunner:
         start_agent_run(
             run_id=state.run_id,
             started_at=str(started_at),
+            requested_routes=validated_routes or None,
         )
 
         run_start = perf_counter()
@@ -233,6 +234,7 @@ class AgentRunner:
                 alerts_generated=alerts_generated,
                 error_message=error_message,
                 recoverable_errors_count=recoverable_errors_count,
+                effective_routes=effective_routes,
             )
 
         run_result = AgentRunResult(
