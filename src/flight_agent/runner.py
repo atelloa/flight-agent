@@ -20,6 +20,12 @@ OVERRIDABLE_CONFIG_KEYS = {
     "review_mode",
 }
 
+ROUTE_CONFIG_KEYS = {
+    "date",
+    "max_price",
+    "max_stops",
+}
+
 
 @dataclass
 class AgentRunResult:
@@ -30,6 +36,7 @@ class AgentRunResult:
     alerts_generated: int
     recoverable_errors_count: int
     effective_config: dict
+    effective_routes: dict
     error_message: str | None
     result: dict | None
 
@@ -57,6 +64,99 @@ def validate_config_overrides(config_overrides: dict | None) -> dict:
     return overrides
 
 
+def validate_routes_overrides(routes_overrides: dict | None) -> dict:
+    if routes_overrides is None:
+        return {}
+
+    if not isinstance(routes_overrides, dict) or not routes_overrides:
+        raise ValueError("Debe enviarse al menos una ruta")
+
+    if len(routes_overrides) > 10:
+        raise ValueError("Se permiten como maximo 10 rutas por corrida")
+
+    validated_routes = {}
+
+    for raw_route, raw_config in routes_overrides.items():
+        route = str(raw_route).strip().upper()
+        parts = route.split("-")
+
+        if (
+            len(parts) != 2
+            or any(len(code) != 3 or not code.isalpha() for code in parts)
+        ):
+            raise ValueError(
+                f"Ruta invalida '{raw_route}': use codigos IATA como LIM-CUZ"
+            )
+
+        departure_id, arrival_id = parts
+        if departure_id == arrival_id:
+            raise ValueError(f"Ruta invalida '{route}': origen y destino son iguales")
+
+        if route in validated_routes:
+            raise ValueError(f"Ruta duplicada: {route}")
+
+        if not isinstance(raw_config, dict):
+            raise ValueError(f"Configuracion invalida para la ruta {route}")
+
+        unknown_keys = set(raw_config) - ROUTE_CONFIG_KEYS
+        missing_keys = ROUTE_CONFIG_KEYS - set(raw_config)
+
+        if unknown_keys:
+            unknown = ", ".join(sorted(unknown_keys))
+            raise ValueError(f"Campos no permitidos en {route}: {unknown}")
+
+        if missing_keys:
+            missing = ", ".join(sorted(missing_keys))
+            raise ValueError(f"Faltan campos en {route}: {missing}")
+
+        date_value = str(raw_config["date"])
+        try:
+            datetime.strptime(date_value, "%Y-%m-%d")
+        except ValueError as error:
+            raise ValueError(
+                f"Fecha invalida para {route}: use YYYY-MM-DD"
+            ) from error
+
+        max_price = raw_config["max_price"]
+        if isinstance(max_price, bool) or not isinstance(max_price, (int, float)):
+            raise ValueError(f"max_price de {route} debe ser numerico")
+        if max_price <= 0:
+            raise ValueError(f"max_price de {route} debe ser mayor que 0")
+
+        max_stops = raw_config["max_stops"]
+        if isinstance(max_stops, bool) or not isinstance(max_stops, int):
+            raise ValueError(f"max_stops de {route} debe ser entero")
+        if max_stops < 0 or max_stops > 5:
+            raise ValueError(f"max_stops de {route} debe estar entre 0 y 5")
+
+        validated_routes[route] = {
+            "date": date_value,
+            "max_price": float(max_price),
+            "max_stops": max_stops,
+        }
+
+    return validated_routes
+
+
+def build_effective_routes(state: FlightMonitorState) -> dict:
+    preferred_dates = state.global_config.get("preferred_dates", {})
+    effective_routes = {}
+
+    for route, route_config in state.routes_config.items():
+        preferred_date = preferred_dates.get(route)
+        effective_routes[route] = {
+            "date": (
+                preferred_date.strftime("%Y-%m-%d")
+                if preferred_date is not None
+                else None
+            ),
+            "max_price": route_config.get("max_price"),
+            "max_stops": route_config.get("max_stops"),
+        }
+
+    return effective_routes
+
+
 class AgentRunner:
     """Executes one full flight-agent run.
 
@@ -67,16 +167,19 @@ class AgentRunner:
     def run(
         self,
         config_overrides: dict | None = None,
+        routes_overrides: dict | None = None,
         raise_on_error: bool = True,
         run_id: str | None = None,
     ) -> AgentRunResult:
         validated_overrides = validate_config_overrides(config_overrides)
+        validated_routes = validate_routes_overrides(routes_overrides)
         create_tables()
         migrate_legacy_agent_run_statuses()
 
         state = FlightMonitorState()
         state.run_id = run_id or str(uuid4())[:8]
         state.config_overrides = validated_overrides
+        state.routes_overrides = validated_routes
 
         started_at = datetime.now()
         start_agent_run(
@@ -116,6 +219,7 @@ class AgentRunner:
                 key: state.global_config.get(key)
                 for key in OVERRIDABLE_CONFIG_KEYS
             }
+            effective_routes = build_effective_routes(state)
 
             finish_agent_run(
                 run_id=state.run_id,
@@ -139,6 +243,7 @@ class AgentRunner:
             alerts_generated=alerts_generated,
             recoverable_errors_count=recoverable_errors_count,
             effective_config=effective_config,
+            effective_routes=effective_routes,
             error_message=error_message,
             result=result,
         )
@@ -151,11 +256,13 @@ class AgentRunner:
 
 def run_agent(
     config_overrides: dict | None = None,
+    routes_overrides: dict | None = None,
     raise_on_error: bool = True,
     run_id: str | None = None,
 ) -> AgentRunResult:
     return AgentRunner().run(
         config_overrides=config_overrides,
+        routes_overrides=routes_overrides,
         raise_on_error=raise_on_error,
         run_id=run_id,
     )
