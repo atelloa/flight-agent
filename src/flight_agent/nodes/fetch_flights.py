@@ -2,7 +2,6 @@ from time import perf_counter
 from datetime import datetime
 import requests
 
-from panel import state
 from src.flight_agent.tools.config import SERP_API_KEY
 from src.flight_agent.state import Flight, FlightMonitorState
 from src.flight_agent.persistence.db import get_latest_flights_snapshot
@@ -18,7 +17,7 @@ from src.flight_agent.observability.logging import (
 def parsear_resultado(resultado: dict, route: str) -> Flight:
     """
     Convierte un resultado de SerpAPI en un objeto Flight.
-    
+
     Un resultado tiene:
     - price: precio total
     - total_duration: duración total en minutos
@@ -82,7 +81,7 @@ def buscar_ruta(departure_id: str, arrival_id: str, date: str) -> list:
 
 def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     """
-    NODE: Busca vuelos para todas las rutas configuradas.
+    NODE: Busca vuelos para todas las rutas efectivas de la corrida.
     Busca en un rango de fechas (date_range dias antes y despues).
 
     Lee: state.routes_config y state.global_config
@@ -98,10 +97,23 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     print(f"  Fetch mode activo: {fetch_mode}")
 
     if fetch_mode == "cached":
-        vuelos = get_latest_flights_snapshot()
+        selected_routes = set(state.routes_config)
+        cached_flights = get_latest_flights_snapshot()
+        vuelos = [
+            vuelo
+            for vuelo in cached_flights
+            if vuelo.route in selected_routes
+        ]
         state.latest_offers.extend(vuelos)
 
-        print(f"  [CACHE] Vuelos cargados desde SQLite: {len(vuelos)}")
+        print(
+            f"  [CACHE] Vuelos cargados para las rutas seleccionadas: {len(vuelos)}"
+        )
+        if not vuelos:
+            print(
+                "  [CACHE] No hay datos del ultimo snapshot para esas rutas. "
+                "Use fetch_mode=live para rutas nuevas."
+            )
         log_node_end(state, "fetch_flights", start_time)
         return state
 
