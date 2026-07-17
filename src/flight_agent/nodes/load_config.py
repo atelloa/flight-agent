@@ -20,9 +20,9 @@ OVERRIDABLE_GLOBAL_CONFIG_KEYS = (
 def load_config(state: FlightMonitorState) -> FlightMonitorState:
     """
     NODE: Carga configuracion base desde config/routes.yaml y aplica
-    overrides temporales de la corrida.
+    overrides temporales de rutas y modos globales para una corrida.
 
-    Lee: config/routes.yaml y state.config_overrides
+    Lee: config/routes.yaml, state.routes_overrides y state.config_overrides
     Escribe: state.routes_config y state.global_config
     """
     start_time = log_node_start(
@@ -34,9 +34,13 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     with open("config/routes.yaml", "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
-    # Cargar rutas
+    routes_source = state.routes_overrides or config["routes"]
+
+    # Construir rutas efectivas para esta corrida
     state.routes_config = {}
-    for route, values in config["routes"].items():
+    state.global_config["preferred_dates"] = {}
+
+    for route, values in routes_source.items():
         state.routes_config[route] = {
             "max_price": values["max_price"],
             "max_stops": values["max_stops"],
@@ -52,7 +56,7 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     state.global_config["claude_mode"] = config["global"].get("claude_mode", "live")
     state.global_config["telegram_enabled"] = config["global"].get("telegram_enabled", True)
 
-    # Aplicar overrides solo para esta corrida
+    # Aplicar overrides globales solo para esta corrida
     for key in OVERRIDABLE_GLOBAL_CONFIG_KEYS:
         if key in state.config_overrides:
             state.global_config[key] = state.config_overrides[key]
@@ -63,8 +67,11 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     print(f"  Claude mode: {state.global_config['claude_mode']}")
     print(f"  Telegram enabled: {state.global_config['telegram_enabled']}")
 
+    if state.routes_overrides:
+        print(f"  Rutas temporales aplicadas: {list(state.routes_overrides.keys())}")
+
     if state.config_overrides:
-        print(f"  Overrides aplicados: {state.config_overrides}")
+        print(f"  Overrides globales aplicados: {state.config_overrides}")
 
     log_node_end(state, "load_config", start_time)
     return state
