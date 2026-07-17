@@ -24,6 +24,15 @@
             background-color: #f2f2f2;
         }
 
+        button, input, select {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 7px 10px;
+        }
+
         .price {
             font-weight: bold;
         }
@@ -40,6 +49,51 @@
             margin: 8px 0 12px 0;
             flex-wrap: wrap;
         }
+
+        .run-panel {
+            border: 1px solid #ccc;
+            padding: 16px;
+            margin-bottom: 28px;
+        }
+
+        .route-row {
+            display: grid;
+            grid-template-columns: 90px 90px 150px 130px 110px auto;
+            gap: 8px;
+            align-items: end;
+            padding: 10px 0;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .route-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .route-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .help-text {
+            color: #555;
+            font-size: 0.92rem;
+        }
+
+        .run-response {
+            white-space: pre-wrap;
+            background: #f6f6f6;
+            padding: 12px;
+            min-height: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .route-row {
+                grid-template-columns: repeat(2, minmax(130px, 1fr));
+            }
+        }
     </style>
 </head>
 <body>
@@ -49,6 +103,59 @@
 
     <h2>Estado de la API</h2>
     <p id="api-status" class="status-message">Consultando API...</p>
+
+    <section class="run-panel">
+        <h2>Nueva corrida</h2>
+
+        <p class="help-text">
+            Cada fila representa un tramo de ida. Para un viaje de ida y vuelta,
+            usa “Agregar regreso” y ajusta la fecha del tramo inverso.
+        </p>
+
+        <div class="controls">
+            <label>
+                Fetch mode:
+                <select id="run-fetch-mode">
+                    <option value="cached" selected>cached</option>
+                    <option value="live">live</option>
+                </select>
+            </label>
+
+            <label>
+                Claude mode:
+                <select id="run-claude-mode">
+                    <option value="mock" selected>mock</option>
+                    <option value="live">live</option>
+                </select>
+            </label>
+
+            <label>
+                <input type="checkbox" id="run-review-mode" checked>
+                review mode
+            </label>
+
+            <label>
+                <input type="checkbox" id="run-telegram-enabled">
+                Telegram habilitado
+            </label>
+        </div>
+
+        <h3>Tramos</h3>
+        <div id="routes-editor"></div>
+
+        <div class="controls">
+            <button type="button" id="add-route-button">Agregar tramo</button>
+            <button type="button" id="load-default-routes-button">Cargar rutas base</button>
+            <button type="button" id="run-agent-button">Ejecutar agente</button>
+        </div>
+
+        <p class="help-text">
+            En modo cached solo aparecerán rutas existentes en el último snapshot.
+            Para una ruta nueva, como LIM-CUZ, se necesita live.
+        </p>
+
+        <div id="run-response" class="run-response">Sin ejecución iniciada.</div>
+    </section>
 
     <h2>Últimas corridas</h2>
     <p id="runs-status" class="status-message">Cargando corridas...</p>
@@ -84,19 +191,201 @@
 
     <ul>
         <li><a href="http://127.0.0.1:8000/health">Health JSON</a></li>
+        <li><a href="http://127.0.0.1:8000/config/defaults">Configuración base JSON</a></li>
         <li><a href="http://127.0.0.1:8000/runs">Runs JSON</a></li>
         <li><a href="http://127.0.0.1:8000/offers/cheapest?window=7d&limit=3">Ofertas más baratas JSON</a></li>
         <li><a href="http://127.0.0.1:8000/review-queue">Review queue JSON</a></li>
     </ul>
 
 <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    function normalizeIataInput(input) {
+        input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+    }
+
+    function createRouteRow(route = {}) {
+        const container = document.getElementById("routes-editor");
+        const row = document.createElement("div");
+        row.className = "route-row";
+
+        row.innerHTML = `
+            <label class="route-field">
+                Origen
+                <input class="route-origin" maxlength="3" value="${route.origin ?? ""}" placeholder="LIM" required>
+            </label>
+            <label class="route-field">
+                Destino
+                <input class="route-destination" maxlength="3" value="${route.destination ?? ""}" placeholder="CUZ" required>
+            </label>
+            <label class="route-field">
+                Fecha
+                <input class="route-date" type="date" value="${route.date ?? ""}" required>
+            </label>
+            <label class="route-field">
+                Precio máximo
+                <input class="route-max-price" type="number" min="1" step="0.01" value="${route.max_price ?? 500}" required>
+            </label>
+            <label class="route-field">
+                Escalas máximas
+                <input class="route-max-stops" type="number" min="0" max="5" step="1" value="${route.max_stops ?? 0}" required>
+            </label>
+            <div class="route-actions">
+                <button type="button" class="add-return-button">Agregar regreso</button>
+                <button type="button" class="remove-route-button">Eliminar</button>
+            </div>
+        `;
+
+        const originInput = row.querySelector(".route-origin");
+        const destinationInput = row.querySelector(".route-destination");
+
+        originInput.addEventListener("input", () => normalizeIataInput(originInput));
+        destinationInput.addEventListener("input", () => normalizeIataInput(destinationInput));
+
+        row.querySelector(".remove-route-button").addEventListener("click", function() {
+            row.remove();
+        });
+
+        row.querySelector(".add-return-button").addEventListener("click", function() {
+            createRouteRow({
+                origin: destinationInput.value,
+                destination: originInput.value,
+                date: "",
+                max_price: row.querySelector(".route-max-price").value,
+                max_stops: row.querySelector(".route-max-stops").value,
+            });
+        });
+
+        container.appendChild(row);
+    }
+
+    async function loadDefaultRoutes() {
+        const container = document.getElementById("routes-editor");
+        const responseElement = document.getElementById("run-response");
+
+        try {
+            const response = await fetch(API_BASE + "/config/defaults");
+            if (!response.ok) {
+                throw new Error("La API respondió con status " + response.status);
+            }
+
+            const data = await response.json();
+            container.innerHTML = "";
+            data.routes.forEach(createRouteRow);
+        } catch (error) {
+            responseElement.textContent = "No se pudieron cargar las rutas base: " + error.message;
+            if (container.children.length === 0) {
+                createRouteRow();
+            }
+        }
+    }
+
+    function collectRoutes() {
+        const rows = Array.from(document.querySelectorAll(".route-row"));
+
+        if (rows.length === 0) {
+            throw new Error("Agrega al menos un tramo.");
+        }
+
+        const routes = rows.map(function(row, index) {
+            const origin = row.querySelector(".route-origin").value.trim().toUpperCase();
+            const destination = row.querySelector(".route-destination").value.trim().toUpperCase();
+            const date = row.querySelector(".route-date").value;
+            const maxPrice = Number(row.querySelector(".route-max-price").value);
+            const maxStops = Number(row.querySelector(".route-max-stops").value);
+
+            if (!/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination)) {
+                throw new Error("El tramo " + (index + 1) + " necesita códigos IATA de 3 letras.");
+            }
+            if (origin === destination) {
+                throw new Error("El tramo " + (index + 1) + " tiene el mismo origen y destino.");
+            }
+            if (!date) {
+                throw new Error("El tramo " + (index + 1) + " necesita una fecha.");
+            }
+            if (!(maxPrice > 0)) {
+                throw new Error("El tramo " + (index + 1) + " necesita un precio máximo válido.");
+            }
+            if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 5) {
+                throw new Error("Las escalas máximas del tramo " + (index + 1) + " deben estar entre 0 y 5.");
+            }
+
+            return {
+                origin: origin,
+                destination: destination,
+                date: date,
+                max_price: maxPrice,
+                max_stops: maxStops,
+            };
+        });
+
+        const routeIds = routes.map(route => route.origin + "-" + route.destination);
+        if (new Set(routeIds).size !== routeIds.length) {
+            throw new Error("No se puede repetir el mismo tramo.");
+        }
+
+        return routes;
+    }
+
+    async function executeAgent() {
+        const button = document.getElementById("run-agent-button");
+        const responseElement = document.getElementById("run-response");
+
+        let routes;
+        try {
+            routes = collectRoutes();
+        } catch (error) {
+            responseElement.textContent = error.message;
+            return;
+        }
+
+        const payload = {
+            overrides: {
+                fetch_mode: document.getElementById("run-fetch-mode").value,
+                claude_mode: document.getElementById("run-claude-mode").value,
+                telegram_enabled: document.getElementById("run-telegram-enabled").checked,
+                review_mode: document.getElementById("run-review-mode").checked,
+            },
+            routes: routes,
+        };
+
+        button.disabled = true;
+        responseElement.textContent = "Ejecutando corrida...";
+
+        try {
+            const response = await fetch(API_BASE + "/runs", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                const detail = typeof data.detail === "string"
+                    ? data.detail
+                    : JSON.stringify(data.detail ?? data);
+                throw new Error(detail);
+            }
+
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            await cargarRuns();
+            await cargarOffers();
+        } catch (error) {
+            responseElement.textContent = "Error al ejecutar: " + error.message;
+        } finally {
+            button.disabled = false;
+        }
+    }
+
     async function cargarHealth() {
         const statusElement = document.getElementById("api-status");
 
         statusElement.textContent = "Consultando API...";
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/health");
+            const response = await fetch(API_BASE + "/health");
 
             if (!response.ok) {
                 statusElement.textContent = "API error: status HTTP " + response.status;
@@ -119,7 +408,7 @@
         runsList.innerHTML = "";
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/runs");
+            const response = await fetch(API_BASE + "/runs");
 
             if (!response.ok) {
                 runsStatus.textContent = "Error: la API respondió con status " + response.status;
@@ -189,7 +478,7 @@
         const limit = document.getElementById("offers-limit").value;
         const uniqueAirline = document.getElementById("offers-unique-airline").checked;
 
-        return "http://127.0.0.1:8000/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + uniqueAirline;
+        return API_BASE + "/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + uniqueAirline;
     }
 
     async function cargarOffers() {
@@ -266,10 +555,14 @@
         }
     }
 
+    document.getElementById("add-route-button").addEventListener("click", () => createRouteRow());
+    document.getElementById("load-default-routes-button").addEventListener("click", loadDefaultRoutes);
+    document.getElementById("run-agent-button").addEventListener("click", executeAgent);
     document.getElementById("offers-limit").addEventListener("change", cargarOffers);
     document.getElementById("offers-unique-airline").addEventListener("change", cargarOffers);
 
     cargarHealth();
+    loadDefaultRoutes();
     cargarRuns();
     cargarOffers();
 </script>
