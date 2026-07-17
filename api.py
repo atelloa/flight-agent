@@ -17,9 +17,11 @@ from src.flight_agent.catalogs.airlines import (
     enrich_offer_with_airline_metadata,
     normalize_airline_name,
 )
-from src.flight_agent.persistence.db import (
-    get_agent_runs,
+from src.flight_agent.persistence.agent_runs import (
     get_agent_run,
+    get_agent_runs,
+)
+from src.flight_agent.persistence.db import (
     get_review_queue,
     get_cheapest_offers,
     get_cheapest_offers_for_all_routes,
