@@ -43,8 +43,8 @@
     <section class="run-panel">
         <h2>Nueva corrida</h2>
         <p class="help-text">
-            Cada fila puede ser una búsqueda de solo ida o una tarifa combinada de ida y vuelta.
-            La fecha de regreso siempre se muestra y se habilita al elegir ida y vuelta combinada.
+            Puedes repetir la misma ruta en fechas diferentes. Solo se rechaza una
+            búsqueda exactamente igual: misma ruta, tipo y fechas.
         </p>
 
         <div class="controls">
@@ -74,8 +74,8 @@
         </div>
 
         <p class="help-text">
-            Para rutas nuevas o tarifas combinadas usa live la primera vez.
-            Cached solo reutiliza resultados ya guardados con el mismo tipo de búsqueda.
+            Para una búsqueda nueva usa live la primera vez. Cached solo reutiliza
+            resultados guardados para la misma ruta, tipo y fechas.
         </p>
         <div id="run-response" class="run-response">Sin ejecución iniciada.</div>
     </section>
@@ -238,10 +238,17 @@
             };
         });
 
-        const ids = routes.map(route => route.origin + "-" + route.destination
-            + (route.trip_type === "round_trip" ? "-RT" : ""));
-        if (new Set(ids).size !== ids.length)
-            throw new Error("No se puede repetir la misma búsqueda con el mismo tipo.");
+        const exactSearches = routes.map(route => [
+            route.origin,
+            route.destination,
+            route.trip_type,
+            route.date,
+            route.return_date ?? "",
+        ].join("|"));
+
+        if (new Set(exactSearches).size !== exactSearches.length)
+            throw new Error("No se puede repetir una búsqueda exactamente igual.");
+
         return routes;
     }
 
@@ -271,7 +278,13 @@
                 body: JSON.stringify(payload),
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data));
+            if (!response.ok) {
+                throw new Error(
+                    typeof data.detail === "string"
+                        ? data.detail
+                        : JSON.stringify(data.detail ?? data)
+                );
+            }
             responseElement.textContent = JSON.stringify(data, null, 2);
             await cargarRuns();
             await cargarOffers();
@@ -287,8 +300,12 @@
         try {
             const response = await fetch(API_BASE + "/health");
             const data = await response.json();
-            element.textContent = response.ok ? "API OK: " + data.status : "API error: status " + response.status;
-        } catch (error) { element.textContent = "API error: no se pudo conectar."; }
+            element.textContent = response.ok
+                ? "API OK: " + data.status
+                : "API error: status " + response.status;
+        } catch (error) {
+            element.textContent = "API error: no se pudo conectar.";
+        }
     }
 
     async function cargarRuns() {
@@ -299,7 +316,10 @@
             const response = await fetch(API_BASE + "/runs");
             const runs = await response.json();
             if (!response.ok) throw new Error("status " + response.status);
-            if (!runs.length) { status.textContent = "No hay corridas registradas."; return; }
+            if (!runs.length) {
+                status.textContent = "No hay corridas registradas.";
+                return;
+            }
             const latest = runs.slice(0, 5);
             status.textContent = "Corridas cargadas: " + latest.length;
             const table = document.createElement("table");
@@ -311,13 +331,24 @@
                 tbody.appendChild(row);
             });
             list.appendChild(table);
-        } catch (error) { status.textContent = "Error: no se pudieron cargar las corridas."; }
+        } catch (error) {
+            status.textContent = "Error: no se pudieron cargar las corridas.";
+        }
     }
 
-    function formatRouteTitle(route) {
-        if (!route.endsWith("-RT")) return route;
-        const parts = route.split("-");
-        return parts[0] + " ⇄ " + parts[1] + " (tarifa combinada)";
+    function formatSearchTitle(group) {
+        const searchId = group.search_id ?? group.route;
+        const parts = searchId.split("__");
+
+        if (parts.length >= 3 && parts[1] === "OW") {
+            return group.route + " · solo ida · " + parts[2];
+        }
+
+        if (parts.length >= 4 && parts[1] === "RT") {
+            return group.route + " · ida y vuelta · " + parts[2] + " → " + parts[3];
+        }
+
+        return group.route;
     }
 
     async function cargarOffers() {
@@ -327,14 +358,20 @@
         const unique = document.getElementById("offers-unique-airline").checked;
         list.innerHTML = "";
         try {
-            const response = await fetch(API_BASE + "/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + unique);
+            const response = await fetch(
+                API_BASE + "/offers/cheapest?window=7d&limit=" + limit
+                + "&unique_airline=" + unique
+            );
             const data = await response.json();
             if (!response.ok) throw new Error("status " + response.status);
-            if (!data.routes.length) { status.textContent = "No hay ofertas registradas."; return; }
+            if (!data.routes.length) {
+                status.textContent = "No hay ofertas registradas.";
+                return;
+            }
             status.textContent = "Ofertas cargadas: " + data.routes.length + " búsquedas";
             data.routes.forEach(group => {
                 const title = document.createElement("h3");
-                title.textContent = formatRouteTitle(group.route);
+                title.textContent = formatSearchTitle(group);
                 list.appendChild(title);
                 const table = document.createElement("table");
                 table.innerHTML = `<thead><tr><th>Aerolínea</th><th>Low cost</th><th>Vuelo</th><th>Precio</th><th>Escalas</th><th>Salida</th><th>Capturado</th></tr></thead><tbody></tbody>`;
@@ -346,7 +383,9 @@
                 });
                 list.appendChild(table);
             });
-        } catch (error) { status.textContent = "Error: no se pudieron cargar las ofertas."; }
+        } catch (error) {
+            status.textContent = "Error: no se pudieron cargar las ofertas.";
+        }
     }
 
     document.getElementById("add-route-button").addEventListener("click", () => createRouteRow());
