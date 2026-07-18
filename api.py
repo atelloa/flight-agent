@@ -27,6 +27,7 @@ from src.flight_agent.persistence.db import (
     get_cheapest_offers_for_all_routes,
 )
 from src.flight_agent.runner import run_agent
+from src.flight_agent.searches import build_route_id, build_search_id
 
 
 class RunOverrides(BaseModel):
@@ -74,8 +75,20 @@ class RouteRequest(BaseModel):
         return self
 
     def route_id(self) -> str:
-        suffix = "-RT" if self.trip_type == "round_trip" else ""
-        return f"{self.origin}-{self.destination}{suffix}"
+        return build_route_id(self.origin, self.destination)
+
+    def search_id(self) -> str:
+        return build_search_id(
+            origin=self.origin,
+            destination=self.destination,
+            trip_type=self.trip_type,
+            outbound_date=self.date.isoformat(),
+            return_date=(
+                self.return_date.isoformat()
+                if self.return_date is not None
+                else None
+            ),
+        )
 
 
 class RunRequest(BaseModel):
@@ -91,13 +104,13 @@ class RunRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_unique_routes(self):
+    def validate_unique_searches(self):
         if self.routes is None:
             return self
 
-        route_ids = [route.route_id() for route in self.routes]
-        if len(route_ids) != len(set(route_ids)):
-            raise ValueError("routes must not contain duplicates")
+        search_ids = [route.search_id() for route in self.routes]
+        if len(search_ids) != len(set(search_ids)):
+            raise ValueError("routes must not contain exact duplicate searches")
 
         return self
 
@@ -160,7 +173,9 @@ def build_routes_overrides(request: RunRequest | None) -> dict | None:
         return None
 
     return {
-        route.route_id(): {
+        route.search_id(): {
+            "search_id": route.search_id(),
+            "route_id": route.route_id(),
             "origin": route.origin,
             "destination": route.destination,
             "trip_type": route.trip_type,
@@ -262,9 +277,9 @@ def list_review_queue():
     return get_review_queue()
 
 
-@app.get("/routes/{route_id}/cheapest-offers")
+@app.get("/routes/{search_id}/cheapest-offers")
 def list_cheapest_offers(
-    route_id: str,
+    search_id: str,
     window: str = "7d",
     limit: int = 3,
     unique_airline: bool = False,
@@ -275,7 +290,7 @@ def list_cheapest_offers(
     candidate_limit = 50 if unique_airline else limit
 
     offers = get_cheapest_offers(
-        route=route_id,
+        search_id=search_id,
         window_days=window_days,
         limit=candidate_limit,
     )
@@ -287,7 +302,7 @@ def list_cheapest_offers(
     )
 
     return {
-        "route": route_id,
+        "search_id": search_id,
         "window": window,
         "limit": limit,
         "unique_airline": unique_airline,
@@ -306,18 +321,19 @@ def list_cheapest_offers_for_all_routes(
 
     candidate_limit = 50 if unique_airline else limit
 
-    routes = get_cheapest_offers_for_all_routes(
+    searches = get_cheapest_offers_for_all_routes(
         window_days=window_days,
         limit=candidate_limit,
     )
 
-    filtered_routes = []
+    filtered_searches = []
 
-    for route_group in routes:
-        filtered_routes.append({
-            "route": route_group["route"],
+    for search_group in searches:
+        filtered_searches.append({
+            "search_id": search_group["search_id"],
+            "route": search_group["route"],
             "offers": apply_offer_filters(
-                offers=route_group["offers"],
+                offers=search_group["offers"],
                 limit=limit,
                 unique_airline=unique_airline,
             ),
@@ -327,5 +343,5 @@ def list_cheapest_offers_for_all_routes(
         "window": window,
         "limit_per_route": limit,
         "unique_airline": unique_airline,
-        "routes": filtered_routes,
+        "routes": filtered_searches,
     }
