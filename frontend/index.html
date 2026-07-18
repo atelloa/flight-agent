@@ -1,104 +1,40 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flight Agent</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 24px;
-        }
-
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 24px;
-        }
-
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-        }
-
-        th {
-            background-color: #f2f2f2;
-        }
-
-        button, input, select {
-            font: inherit;
-        }
-
-        button {
-            cursor: pointer;
-            padding: 7px 10px;
-        }
-
-        .price {
-            font-weight: bold;
-        }
-
-        .status-message {
-            margin: 8px 0 12px 0;
-            font-weight: bold;
-        }
-
-        .controls {
-            display: flex;
-            gap: 16px;
-            align-items: center;
-            margin: 8px 0 12px 0;
-            flex-wrap: wrap;
-        }
-
-        .run-panel {
-            border: 1px solid #ccc;
-            padding: 16px;
-            margin-bottom: 28px;
-        }
-
+        body { font-family: Arial, sans-serif; margin: 24px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f2f2f2; }
+        button, input, select { font: inherit; }
+        button { cursor: pointer; padding: 7px 10px; }
+        input:disabled { background: #eee; color: #777; cursor: not-allowed; }
+        .controls { display: flex; gap: 16px; align-items: center; margin: 8px 0 12px; flex-wrap: wrap; }
+        .run-panel { border: 1px solid #ccc; padding: 16px; margin-bottom: 28px; }
         .route-row {
             display: grid;
-            grid-template-columns: 145px 80px 80px 135px 135px 120px 100px auto;
+            grid-template-columns: 150px 75px 75px 135px 145px 125px 105px auto;
             gap: 8px;
             align-items: end;
             padding: 12px 0;
             border-bottom: 1px solid #ddd;
         }
-
-        .route-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .route-actions {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .help-text {
-            color: #555;
-            font-size: 0.92rem;
-        }
-
-        .run-response {
-            white-space: pre-wrap;
-            background: #f6f6f6;
-            padding: 12px;
-            min-height: 20px;
-        }
-
-        @media (max-width: 1100px) {
-            .route-row {
-                grid-template-columns: repeat(2, minmax(140px, 1fr));
-            }
+        .route-field { display: flex; flex-direction: column; gap: 4px; }
+        .route-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .help-text { color: #555; font-size: 0.92rem; }
+        .status-message { margin: 8px 0 12px; font-weight: bold; }
+        .run-response { white-space: pre-wrap; background: #f6f6f6; padding: 12px; min-height: 20px; }
+        .price { font-weight: bold; }
+        @media (max-width: 1150px) {
+            .route-row { grid-template-columns: repeat(2, minmax(145px, 1fr)); }
         }
     </style>
 </head>
 <body>
     <h1>Flight Agent</h1>
-
     <p>UI mínima del agente de monitoreo de vuelos.</p>
 
     <h2>Estado de la API</h2>
@@ -106,39 +42,26 @@
 
     <section class="run-panel">
         <h2>Nueva corrida</h2>
-
         <p class="help-text">
-            Una fila puede representar un tramo solo ida o una búsqueda combinada
-            de ida y vuelta. “Agregar regreso independiente” crea un segundo tramo
-            con reglas y precio separados.
+            Cada fila puede ser una búsqueda de solo ida o una tarifa combinada de ida y vuelta.
+            La fecha de regreso siempre se muestra y se habilita al elegir ida y vuelta combinada.
         </p>
 
         <div class="controls">
-            <label>
-                Fetch mode:
+            <label>Fetch mode:
                 <select id="run-fetch-mode">
                     <option value="cached" selected>cached</option>
                     <option value="live">live</option>
                 </select>
             </label>
-
-            <label>
-                Claude mode:
+            <label>Claude mode:
                 <select id="run-claude-mode">
                     <option value="mock" selected>mock</option>
                     <option value="live">live</option>
                 </select>
             </label>
-
-            <label>
-                <input type="checkbox" id="run-review-mode" checked>
-                review mode
-            </label>
-
-            <label>
-                <input type="checkbox" id="run-telegram-enabled">
-                Telegram habilitado
-            </label>
+            <label><input type="checkbox" id="run-review-mode" checked> review mode</label>
+            <label><input type="checkbox" id="run-telegram-enabled"> Telegram habilitado</label>
         </div>
 
         <h3>Búsquedas</h3>
@@ -151,10 +74,9 @@
         </div>
 
         <p class="help-text">
-            Las búsquedas nuevas y las tarifas combinadas necesitan modo live la
-            primera vez. Cached solo reutiliza resultados ya guardados con el mismo tipo.
+            Para rutas nuevas o tarifas combinadas usa live la primera vez.
+            Cached solo reutiliza resultados ya guardados con el mismo tipo de búsqueda.
         </p>
-
         <div id="run-response" class="run-response">Sin ejecución iniciada.</div>
     </section>
 
@@ -163,33 +85,21 @@
     <div id="runs-list"></div>
 
     <h2>Ofertas más baratas</h2>
-
     <div class="controls">
         <label for="offers-limit">Cantidad por búsqueda:</label>
         <select id="offers-limit">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3" selected>3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
+            <option value="1">1</option><option value="2">2</option>
+            <option value="3" selected>3</option><option value="4">4</option>
+            <option value="5">5</option><option value="6">6</option>
+            <option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
         </select>
-
-        <label>
-            <input type="checkbox" id="offers-unique-airline">
-            máximo 1 oferta por aerolínea
-        </label>
+        <label><input type="checkbox" id="offers-unique-airline"> máximo 1 oferta por aerolínea</label>
     </div>
-
     <p id="offers-status" class="status-message">Cargando ofertas...</p>
     <div id="offers-list"></div>
 
     <h2>Secciones</h2>
-
     <ul>
         <li><a href="http://127.0.0.1:8000/health">Health JSON</a></li>
         <li><a href="http://127.0.0.1:8000/config/defaults">Configuración base JSON</a></li>
@@ -206,93 +116,70 @@
     }
 
     function syncTripType(row) {
-        const tripType = row.querySelector(".route-trip-type").value;
-        const returnField = row.querySelector(".route-return-field");
+        const isRoundTrip = row.querySelector(".route-trip-type").value === "round_trip";
         const returnInput = row.querySelector(".route-return-date");
-        const addIndependentReturnButton = row.querySelector(".add-return-button");
+        const independentReturnButton = row.querySelector(".add-return-button");
         const priceLabel = row.querySelector(".route-price-label");
 
-        const isRoundTrip = tripType === "round_trip";
-        returnField.style.display = isRoundTrip ? "flex" : "none";
+        returnInput.disabled = !isRoundTrip;
         returnInput.required = isRoundTrip;
-        addIndependentReturnButton.style.display = isRoundTrip ? "none" : "inline-block";
-        priceLabel.textContent = isRoundTrip
-            ? "Precio máximo total"
-            : "Precio máximo tramo";
+        independentReturnButton.hidden = isRoundTrip;
+        priceLabel.textContent = isRoundTrip ? "Precio máximo total" : "Precio máximo tramo";
 
-        if (!isRoundTrip) {
-            returnInput.value = "";
-        }
+        if (!isRoundTrip) returnInput.value = "";
     }
 
     function createRouteRow(route = {}) {
         const container = document.getElementById("routes-editor");
         const row = document.createElement("div");
         row.className = "route-row";
-
         const tripType = route.trip_type ?? "one_way";
 
         row.innerHTML = `
-            <label class="route-field">
-                Tipo
+            <label class="route-field">Tipo
                 <select class="route-trip-type">
                     <option value="one_way" ${tripType === "one_way" ? "selected" : ""}>Solo ida</option>
                     <option value="round_trip" ${tripType === "round_trip" ? "selected" : ""}>Ida y vuelta combinada</option>
                 </select>
             </label>
-            <label class="route-field">
-                Origen
+            <label class="route-field">Origen
                 <input class="route-origin" maxlength="3" value="${route.origin ?? ""}" placeholder="LIM" required>
             </label>
-            <label class="route-field">
-                Destino
+            <label class="route-field">Destino
                 <input class="route-destination" maxlength="3" value="${route.destination ?? ""}" placeholder="CUZ" required>
             </label>
-            <label class="route-field">
-                Fecha ida
+            <label class="route-field">Fecha ida
                 <input class="route-date" type="date" value="${route.date ?? ""}" required>
             </label>
-            <label class="route-field route-return-field">
-                Fecha regreso
+            <label class="route-field">Fecha regreso
                 <input class="route-return-date" type="date" value="${route.return_date ?? ""}">
             </label>
-            <label class="route-field">
-                <span class="route-price-label">Precio máximo tramo</span>
+            <label class="route-field"><span class="route-price-label">Precio máximo tramo</span>
                 <input class="route-max-price" type="number" min="1" step="0.01" value="${route.max_price ?? 500}" required>
             </label>
-            <label class="route-field">
-                Escalas máximas
+            <label class="route-field">Escalas máximas
                 <input class="route-max-stops" type="number" min="0" max="5" step="1" value="${route.max_stops ?? 0}" required>
             </label>
             <div class="route-actions">
                 <button type="button" class="add-return-button">Agregar regreso independiente</button>
                 <button type="button" class="remove-route-button">Eliminar</button>
-            </div>
-        `;
+            </div>`;
 
         const originInput = row.querySelector(".route-origin");
         const destinationInput = row.querySelector(".route-destination");
-        const tripTypeSelect = row.querySelector(".route-trip-type");
-
         originInput.addEventListener("input", () => normalizeIataInput(originInput));
         destinationInput.addEventListener("input", () => normalizeIataInput(destinationInput));
-        tripTypeSelect.addEventListener("change", () => syncTripType(row));
-
-        row.querySelector(".remove-route-button").addEventListener("click", function() {
-            row.remove();
-        });
-
-        row.querySelector(".add-return-button").addEventListener("click", function() {
-            createRouteRow({
-                origin: destinationInput.value,
-                destination: originInput.value,
-                trip_type: "one_way",
-                date: "",
-                return_date: null,
-                max_price: row.querySelector(".route-max-price").value,
-                max_stops: row.querySelector(".route-max-stops").value,
-            });
-        });
+        row.querySelector(".route-trip-type").addEventListener("change", () => syncTripType(row));
+        row.querySelector(".remove-route-button").addEventListener("click", () => row.remove());
+        row.querySelector(".add-return-button").addEventListener("click", () => createRouteRow({
+            origin: destinationInput.value,
+            destination: originInput.value,
+            trip_type: "one_way",
+            date: "",
+            return_date: null,
+            max_price: row.querySelector(".route-max-price").value,
+            max_stops: row.querySelector(".route-max-stops").value,
+        }));
 
         container.appendChild(row);
         syncTripType(row);
@@ -301,32 +188,23 @@
     async function loadDefaultRoutes() {
         const container = document.getElementById("routes-editor");
         const responseElement = document.getElementById("run-response");
-
         try {
             const response = await fetch(API_BASE + "/config/defaults");
-            if (!response.ok) {
-                throw new Error("La API respondió con status " + response.status);
-            }
-
+            if (!response.ok) throw new Error("status " + response.status);
             const data = await response.json();
             container.innerHTML = "";
             data.routes.forEach(createRouteRow);
         } catch (error) {
             responseElement.textContent = "No se pudieron cargar las rutas base: " + error.message;
-            if (container.children.length === 0) {
-                createRouteRow();
-            }
+            if (!container.children.length) createRouteRow();
         }
     }
 
     function collectRoutes() {
         const rows = Array.from(document.querySelectorAll(".route-row"));
+        if (!rows.length) throw new Error("Agrega al menos una búsqueda.");
 
-        if (rows.length === 0) {
-            throw new Error("Agrega al menos una búsqueda.");
-        }
-
-        const routes = rows.map(function(row, index) {
+        const routes = rows.map((row, index) => {
             const tripType = row.querySelector(".route-trip-type").value;
             const origin = row.querySelector(".route-origin").value.trim().toUpperCase();
             const destination = row.querySelector(".route-destination").value.trim().toUpperCase();
@@ -334,64 +212,45 @@
             const returnDate = row.querySelector(".route-return-date").value;
             const maxPrice = Number(row.querySelector(".route-max-price").value);
             const maxStops = Number(row.querySelector(".route-max-stops").value);
+            const number = index + 1;
 
-            if (!/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination)) {
-                throw new Error("La búsqueda " + (index + 1) + " necesita códigos IATA de 3 letras.");
-            }
-            if (origin === destination) {
-                throw new Error("La búsqueda " + (index + 1) + " tiene el mismo origen y destino.");
-            }
-            if (!date) {
-                throw new Error("La búsqueda " + (index + 1) + " necesita fecha de ida.");
-            }
-            if (tripType === "round_trip") {
-                if (!returnDate) {
-                    throw new Error("La búsqueda " + (index + 1) + " necesita fecha de regreso.");
-                }
-                if (returnDate <= date) {
-                    throw new Error("El regreso de la búsqueda " + (index + 1) + " debe ser posterior a la ida.");
-                }
-            }
-            if (!(maxPrice > 0)) {
-                throw new Error("La búsqueda " + (index + 1) + " necesita un precio máximo válido.");
-            }
-            if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 5) {
-                throw new Error("Las escalas máximas de la búsqueda " + (index + 1) + " deben estar entre 0 y 5.");
-            }
+            if (!/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination))
+                throw new Error("La búsqueda " + number + " necesita códigos IATA de 3 letras.");
+            if (origin === destination)
+                throw new Error("La búsqueda " + number + " tiene el mismo origen y destino.");
+            if (!date) throw new Error("La búsqueda " + number + " necesita fecha de ida.");
+            if (tripType === "round_trip" && !returnDate)
+                throw new Error("La búsqueda " + number + " necesita fecha de regreso.");
+            if (tripType === "round_trip" && returnDate <= date)
+                throw new Error("El regreso de la búsqueda " + number + " debe ser posterior a la ida.");
+            if (!(maxPrice > 0)) throw new Error("La búsqueda " + number + " necesita un precio máximo válido.");
+            if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 5)
+                throw new Error("Las escalas máximas de la búsqueda " + number + " deben estar entre 0 y 5.");
 
             return {
-                origin: origin,
-                destination: destination,
+                origin,
+                destination,
                 trip_type: tripType,
-                date: date,
+                date,
                 return_date: tripType === "round_trip" ? returnDate : null,
                 max_price: maxPrice,
                 max_stops: maxStops,
             };
         });
 
-        const routeIds = routes.map(function(route) {
-            const suffix = route.trip_type === "round_trip" ? "-RT" : "";
-            return route.origin + "-" + route.destination + suffix;
-        });
-        if (new Set(routeIds).size !== routeIds.length) {
+        const ids = routes.map(route => route.origin + "-" + route.destination
+            + (route.trip_type === "round_trip" ? "-RT" : ""));
+        if (new Set(ids).size !== ids.length)
             throw new Error("No se puede repetir la misma búsqueda con el mismo tipo.");
-        }
-
         return routes;
     }
 
     async function executeAgent() {
         const button = document.getElementById("run-agent-button");
         const responseElement = document.getElementById("run-response");
-
         let routes;
-        try {
-            routes = collectRoutes();
-        } catch (error) {
-            responseElement.textContent = error.message;
-            return;
-        }
+        try { routes = collectRoutes(); }
+        catch (error) { responseElement.textContent = error.message; return; }
 
         const payload = {
             overrides: {
@@ -400,29 +259,19 @@
                 telegram_enabled: document.getElementById("run-telegram-enabled").checked,
                 review_mode: document.getElementById("run-review-mode").checked,
             },
-            routes: routes,
+            routes,
         };
 
         button.disabled = true;
         responseElement.textContent = "Ejecutando corrida...";
-
         try {
             const response = await fetch(API_BASE + "/runs", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify(payload),
             });
-
             const data = await response.json();
-            if (!response.ok) {
-                const detail = typeof data.detail === "string"
-                    ? data.detail
-                    : JSON.stringify(data.detail ?? data);
-                throw new Error(detail);
-            }
-
+            if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data));
             responseElement.textContent = JSON.stringify(data, null, 2);
             await cargarRuns();
             await cargarOffers();
@@ -434,174 +283,70 @@
     }
 
     async function cargarHealth() {
-        const statusElement = document.getElementById("api-status");
-        statusElement.textContent = "Consultando API...";
-
+        const element = document.getElementById("api-status");
         try {
             const response = await fetch(API_BASE + "/health");
-            if (!response.ok) {
-                statusElement.textContent = "API error: status HTTP " + response.status;
-                return;
-            }
-
             const data = await response.json();
-            statusElement.textContent = "API OK: " + data.status;
-        } catch (error) {
-            statusElement.textContent = "API error: no se pudo conectar.";
-            console.error(error);
-        }
+            element.textContent = response.ok ? "API OK: " + data.status : "API error: status " + response.status;
+        } catch (error) { element.textContent = "API error: no se pudo conectar."; }
     }
 
     async function cargarRuns() {
-        const runsStatus = document.getElementById("runs-status");
-        const runsList = document.getElementById("runs-list");
-
-        runsStatus.textContent = "Cargando corridas...";
-        runsList.innerHTML = "";
-
+        const status = document.getElementById("runs-status");
+        const list = document.getElementById("runs-list");
+        list.innerHTML = "";
         try {
             const response = await fetch(API_BASE + "/runs");
-            if (!response.ok) {
-                runsStatus.textContent = "Error: la API respondió con status " + response.status;
-                return;
-            }
-
             const runs = await response.json();
-            if (runs.length === 0) {
-                runsStatus.textContent = "No hay corridas registradas.";
-                return;
-            }
-
-            const ultimasRuns = runs.slice(0, 5);
-            runsStatus.textContent = "Corridas cargadas: " + ultimasRuns.length;
-
+            if (!response.ok) throw new Error("status " + response.status);
+            if (!runs.length) { status.textContent = "No hay corridas registradas."; return; }
+            const latest = runs.slice(0, 5);
+            status.textContent = "Corridas cargadas: " + latest.length;
             const table = document.createElement("table");
-            const thead = document.createElement("thead");
-            thead.innerHTML = `
-                <tr>
-                    <th>Run ID</th>
-                    <th>Status</th>
-                    <th>Duración</th>
-                    <th>Fetch mode</th>
-                    <th>Claude mode</th>
-                    <th>Vuelos</th>
-                    <th>Alertas</th>
-                    <th>Errores no fatales</th>
-                </tr>
-            `;
-            table.appendChild(thead);
-
-            const tbody = document.createElement("tbody");
-            ultimasRuns.forEach(function(run) {
+            table.innerHTML = `<thead><tr><th>Run ID</th><th>Status</th><th>Duración</th><th>Fetch</th><th>Claude</th><th>Vuelos</th><th>Alertas</th><th>Errores</th></tr></thead><tbody></tbody>`;
+            const tbody = table.querySelector("tbody");
+            latest.forEach(run => {
                 const row = document.createElement("tr");
-                const duration = run.duration_seconds === null
-                    ? "-"
-                    : run.duration_seconds + "s";
-                const fetchMode = run.fetch_mode ?? "-";
-                const claudeMode = run.claude_mode ?? "-";
-
-                row.innerHTML = `
-                    <td><a href="run.html?run_id=${run.run_id}">${run.run_id}</a></td>
-                    <td>${run.status}</td>
-                    <td>${duration}</td>
-                    <td>${fetchMode}</td>
-                    <td>${claudeMode}</td>
-                    <td>${run.flights_found}</td>
-                    <td>${run.alerts_generated}</td>
-                    <td>${run.recoverable_errors_count}</td>
-                `;
+                row.innerHTML = `<td><a href="run.html?run_id=${run.run_id}">${run.run_id}</a></td><td>${run.status}</td><td>${run.duration_seconds === null ? "-" : run.duration_seconds + "s"}</td><td>${run.fetch_mode ?? "-"}</td><td>${run.claude_mode ?? "-"}</td><td>${run.flights_found}</td><td>${run.alerts_generated}</td><td>${run.recoverable_errors_count}</td>`;
                 tbody.appendChild(row);
             });
-
-            table.appendChild(tbody);
-            runsList.appendChild(table);
-        } catch (error) {
-            runsStatus.textContent = "Error: no se pudieron cargar las corridas.";
-            console.error(error);
-        }
-    }
-
-    function buildOffersUrl() {
-        const limit = document.getElementById("offers-limit").value;
-        const uniqueAirline = document.getElementById("offers-unique-airline").checked;
-        return API_BASE + "/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + uniqueAirline;
+            list.appendChild(table);
+        } catch (error) { status.textContent = "Error: no se pudieron cargar las corridas."; }
     }
 
     function formatRouteTitle(route) {
-        if (route.endsWith("-RT")) {
-            const parts = route.split("-");
-            return parts[0] + " ⇄ " + parts[1] + " (tarifa combinada)";
-        }
-        return route;
+        if (!route.endsWith("-RT")) return route;
+        const parts = route.split("-");
+        return parts[0] + " ⇄ " + parts[1] + " (tarifa combinada)";
     }
 
     async function cargarOffers() {
-        const offersStatus = document.getElementById("offers-status");
-        const offersList = document.getElementById("offers-list");
-
-        offersStatus.textContent = "Cargando ofertas...";
-        offersList.innerHTML = "";
-
+        const status = document.getElementById("offers-status");
+        const list = document.getElementById("offers-list");
+        const limit = document.getElementById("offers-limit").value;
+        const unique = document.getElementById("offers-unique-airline").checked;
+        list.innerHTML = "";
         try {
-            const response = await fetch(buildOffersUrl());
-            if (!response.ok) {
-                offersStatus.textContent = "Error: la API respondió con status " + response.status;
-                return;
-            }
-
+            const response = await fetch(API_BASE + "/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + unique);
             const data = await response.json();
-            if (data.routes.length === 0) {
-                offersStatus.textContent = "No hay ofertas registradas.";
-                return;
-            }
-
-            const modo = data.unique_airline ? "1 por aerolínea" : "normal";
-            offersStatus.textContent = "Ofertas cargadas: " + data.routes.length + " búsquedas | límite: " + data.limit_per_route + " | modo: " + modo;
-
-            data.routes.forEach(function(routeGroup) {
-                const routeTitle = document.createElement("h3");
-                routeTitle.textContent = formatRouteTitle(routeGroup.route);
-                offersList.appendChild(routeTitle);
-
+            if (!response.ok) throw new Error("status " + response.status);
+            if (!data.routes.length) { status.textContent = "No hay ofertas registradas."; return; }
+            status.textContent = "Ofertas cargadas: " + data.routes.length + " búsquedas";
+            data.routes.forEach(group => {
+                const title = document.createElement("h3");
+                title.textContent = formatRouteTitle(group.route);
+                list.appendChild(title);
                 const table = document.createElement("table");
-                const thead = document.createElement("thead");
-                thead.innerHTML = `
-                    <tr>
-                        <th>Aerolínea de salida</th>
-                        <th>Low cost</th>
-                        <th>Vuelo de salida</th>
-                        <th>Precio</th>
-                        <th>Escalas salida</th>
-                        <th>Salida</th>
-                        <th>Capturado</th>
-                    </tr>
-                `;
-                table.appendChild(thead);
-
-                const tbody = document.createElement("tbody");
-                routeGroup.offers.forEach(function(offer) {
+                table.innerHTML = `<thead><tr><th>Aerolínea</th><th>Low cost</th><th>Vuelo</th><th>Precio</th><th>Escalas</th><th>Salida</th><th>Capturado</th></tr></thead><tbody></tbody>`;
+                const tbody = table.querySelector("tbody");
+                group.offers.forEach(offer => {
                     const row = document.createElement("tr");
-                    const lowCostText = offer.is_low_cost ? "Sí" : "No";
-
-                    row.innerHTML = `
-                        <td>${offer.airline}</td>
-                        <td>${lowCostText}</td>
-                        <td>${offer.flight_number}</td>
-                        <td class="price">${offer.price}</td>
-                        <td>${offer.stops}</td>
-                        <td>${offer.departure_date}</td>
-                        <td>${offer.captured_at}</td>
-                    `;
+                    row.innerHTML = `<td>${offer.airline}</td><td>${offer.is_low_cost ? "Sí" : "No"}</td><td>${offer.flight_number}</td><td class="price">${offer.price}</td><td>${offer.stops}</td><td>${offer.departure_date}</td><td>${offer.captured_at}</td>`;
                     tbody.appendChild(row);
                 });
-
-                table.appendChild(tbody);
-                offersList.appendChild(table);
+                list.appendChild(table);
             });
-        } catch (error) {
-            offersStatus.textContent = "Error: no se pudieron cargar las ofertas.";
-            console.error(error);
-        }
+        } catch (error) { status.textContent = "Error: no se pudieron cargar las ofertas."; }
     }
 
     document.getElementById("add-route-button").addEventListener("click", () => createRouteRow());
