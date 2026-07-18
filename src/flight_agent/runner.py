@@ -21,6 +21,16 @@ OVERRIDABLE_CONFIG_KEYS = {
 }
 
 ROUTE_CONFIG_KEYS = {
+    "origin",
+    "destination",
+    "trip_type",
+    "date",
+    "return_date",
+    "max_price",
+    "max_stops",
+}
+
+REQUIRED_ROUTE_CONFIG_KEYS = {
     "date",
     "max_price",
     "max_stops",
@@ -64,6 +74,28 @@ def validate_config_overrides(config_overrides: dict | None) -> dict:
     return overrides
 
 
+def parse_route_id(route: str) -> tuple[str, str, str]:
+    parts = route.split("-")
+
+    if len(parts) == 2:
+        origin, destination = parts
+        trip_type = "one_way"
+    elif len(parts) == 3 and parts[2] == "RT":
+        origin, destination = parts[:2]
+        trip_type = "round_trip"
+    else:
+        raise ValueError(
+            f"Ruta invalida '{route}': use LIM-CUZ o LIM-CUZ-RT"
+        )
+
+    if any(len(code) != 3 or not code.isalpha() for code in (origin, destination)):
+        raise ValueError(
+            f"Ruta invalida '{route}': use codigos IATA de tres letras"
+        )
+
+    return origin, destination, trip_type
+
+
 def validate_routes_overrides(routes_overrides: dict | None) -> dict:
     if routes_overrides is None:
         return {}
@@ -78,28 +110,12 @@ def validate_routes_overrides(routes_overrides: dict | None) -> dict:
 
     for raw_route, raw_config in routes_overrides.items():
         route = str(raw_route).strip().upper()
-        parts = route.split("-")
-
-        if (
-            len(parts) != 2
-            or any(len(code) != 3 or not code.isalpha() for code in parts)
-        ):
-            raise ValueError(
-                f"Ruta invalida '{raw_route}': use codigos IATA como LIM-CUZ"
-            )
-
-        departure_id, arrival_id = parts
-        if departure_id == arrival_id:
-            raise ValueError(f"Ruta invalida '{route}': origen y destino son iguales")
-
-        if route in validated_routes:
-            raise ValueError(f"Ruta duplicada: {route}")
 
         if not isinstance(raw_config, dict):
             raise ValueError(f"Configuracion invalida para la ruta {route}")
 
         unknown_keys = set(raw_config) - ROUTE_CONFIG_KEYS
-        missing_keys = ROUTE_CONFIG_KEYS - set(raw_config)
+        missing_keys = REQUIRED_ROUTE_CONFIG_KEYS - set(raw_config)
 
         if unknown_keys:
             unknown = ", ".join(sorted(unknown_keys))
@@ -109,13 +125,75 @@ def validate_routes_overrides(routes_overrides: dict | None) -> dict:
             missing = ", ".join(sorted(missing_keys))
             raise ValueError(f"Faltan campos en {route}: {missing}")
 
+        fallback_origin, fallback_destination, fallback_trip_type = parse_route_id(route)
+
+        origin = str(raw_config.get("origin", fallback_origin)).strip().upper()
+        destination = str(
+            raw_config.get("destination", fallback_destination)
+        ).strip().upper()
+        trip_type = str(
+            raw_config.get("trip_type", fallback_trip_type)
+        ).strip().lower()
+
+        if any(
+            len(code) != 3 or not code.isalpha()
+            for code in (origin, destination)
+        ):
+            raise ValueError(f"Ruta invalida '{route}': codigos IATA invalidos")
+
+        if origin == destination:
+            raise ValueError(f"Ruta invalida '{route}': origen y destino son iguales")
+
+        if trip_type not in {"one_way", "round_trip"}:
+            raise ValueError(
+                f"trip_type de {route} debe ser 'one_way' o 'round_trip'"
+            )
+
+        expected_route = (
+            f"{origin}-{destination}-RT"
+            if trip_type == "round_trip"
+            else f"{origin}-{destination}"
+        )
+        if route != expected_route:
+            raise ValueError(
+                f"El identificador {route} no coincide con la configuracion; "
+                f"se esperaba {expected_route}"
+            )
+
+        if expected_route in validated_routes:
+            raise ValueError(f"Ruta duplicada: {expected_route}")
+
         date_value = str(raw_config["date"])
         try:
-            datetime.strptime(date_value, "%Y-%m-%d")
+            outbound_date = datetime.strptime(date_value, "%Y-%m-%d")
         except ValueError as error:
             raise ValueError(
                 f"Fecha invalida para {route}: use YYYY-MM-DD"
             ) from error
+
+        raw_return_date = raw_config.get("return_date")
+        return_date_value = None
+
+        if trip_type == "round_trip":
+            if not raw_return_date:
+                raise ValueError(f"return_date es obligatorio para {route}")
+
+            return_date_value = str(raw_return_date)
+            try:
+                return_date = datetime.strptime(return_date_value, "%Y-%m-%d")
+            except ValueError as error:
+                raise ValueError(
+                    f"Fecha de regreso invalida para {route}: use YYYY-MM-DD"
+                ) from error
+
+            if return_date <= outbound_date:
+                raise ValueError(
+                    f"La fecha de regreso de {route} debe ser posterior a la ida"
+                )
+        elif raw_return_date not in (None, ""):
+            raise ValueError(
+                f"return_date solo se permite para rutas round_trip: {route}"
+            )
 
         max_price = raw_config["max_price"]
         if isinstance(max_price, bool) or not isinstance(max_price, (int, float)):
@@ -129,8 +207,12 @@ def validate_routes_overrides(routes_overrides: dict | None) -> dict:
         if max_stops < 0 or max_stops > 5:
             raise ValueError(f"max_stops de {route} debe estar entre 0 y 5")
 
-        validated_routes[route] = {
+        validated_routes[expected_route] = {
+            "origin": origin,
+            "destination": destination,
+            "trip_type": trip_type,
             "date": date_value,
+            "return_date": return_date_value,
             "max_price": float(max_price),
             "max_stops": max_stops,
         }
@@ -145,11 +227,15 @@ def build_effective_routes(state: FlightMonitorState) -> dict:
     for route, route_config in state.routes_config.items():
         preferred_date = preferred_dates.get(route)
         effective_routes[route] = {
+            "origin": route_config.get("origin"),
+            "destination": route_config.get("destination"),
+            "trip_type": route_config.get("trip_type", "one_way"),
             "date": (
                 preferred_date.strftime("%Y-%m-%d")
                 if preferred_date is not None
                 else None
             ),
+            "return_date": route_config.get("return_date"),
             "max_price": route_config.get("max_price"),
             "max_stops": route_config.get("max_stops"),
         }
