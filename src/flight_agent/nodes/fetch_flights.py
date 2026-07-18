@@ -2,16 +2,20 @@ from datetime import datetime, timedelta
 
 import requests
 
-from src.flight_agent.tools.config import SERP_API_KEY
-from src.flight_agent.state import Flight, FlightMonitorState
-from src.flight_agent.persistence.db import get_latest_flights_snapshot
 from src.flight_agent.observability.logging import (
     log_node_start,
     log_node_end,
 )
+from src.flight_agent.persistence.db import get_latest_flights_snapshot
+from src.flight_agent.state import Flight, FlightMonitorState
+from src.flight_agent.tools.config import SERP_API_KEY
 
 
-def parsear_resultado(resultado: dict, route: str) -> Flight | None:
+def parsear_resultado(
+    resultado: dict,
+    route_id: str,
+    search_id: str,
+) -> Flight | None:
     """Convierte un resultado de SerpAPI en un Flight resumido.
 
     En una busqueda round_trip, ``price`` representa la tarifa combinada
@@ -33,13 +37,14 @@ def parsear_resultado(resultado: dict, route: str) -> Flight | None:
     departure_time = datetime.strptime(departure_time_str, "%Y-%m-%d %H:%M")
 
     return Flight(
-        id=f"{route}-{flight_number}",
+        id=f"{search_id}-{flight_number}",
         flight_number=flight_number,
-        route=route,
+        route=route_id,
         price=price,
         date=departure_time,
         airline=airline,
         stops=stops,
+        search_id=search_id,
     )
 
 
@@ -47,11 +52,12 @@ def buscar_ruta(
     departure_id: str,
     arrival_id: str,
     outbound_date: str,
-    route: str,
+    route_id: str,
+    search_id: str,
     trip_type: str = "one_way",
     return_date: str | None = None,
 ) -> list:
-    """Llama a SerpAPI para una ruta one-way o round-trip."""
+    """Llama a SerpAPI para una busqueda one-way o round-trip."""
     params = {
         "engine": "google_flights",
         "departure_id": departure_id,
@@ -78,7 +84,11 @@ def buscar_ruta(
 
     vuelos = []
     for resultado in data.get("best_flights", []):
-        vuelo = parsear_resultado(resultado, route)
+        vuelo = parsear_resultado(
+            resultado=resultado,
+            route_id=route_id,
+            search_id=search_id,
+        )
         if vuelo is not None:
             vuelos.append(vuelo)
 
@@ -86,13 +96,7 @@ def buscar_ruta(
 
 
 def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
-    """
-    NODE: Busca vuelos para todas las rutas efectivas de la corrida.
-    Busca en un rango de fechas (date_range dias antes y despues).
-
-    Lee: state.routes_config y state.global_config
-    Escribe: state.latest_offers
-    """
+    """Busca vuelos para todas las búsquedas efectivas de la corrida."""
     start_time = log_node_start(
         state,
         "fetch_flights",
@@ -103,22 +107,22 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     print(f"  Fetch mode activo: {fetch_mode}")
 
     if fetch_mode == "cached":
-        selected_routes = set(state.routes_config)
+        selected_searches = set(state.routes_config)
         cached_flights = get_latest_flights_snapshot()
         vuelos = [
             vuelo
             for vuelo in cached_flights
-            if vuelo.route in selected_routes
+            if vuelo.search_id in selected_searches
         ]
         state.latest_offers.extend(vuelos)
 
         print(
-            f"  [CACHE] Vuelos cargados para las rutas seleccionadas: {len(vuelos)}"
+            f"  [CACHE] Vuelos cargados para las busquedas seleccionadas: {len(vuelos)}"
         )
         if not vuelos:
             print(
-                "  [CACHE] No hay datos del ultimo snapshot para esas rutas. "
-                "Use fetch_mode=live para rutas nuevas o round-trip."
+                "  [CACHE] No hay datos del ultimo snapshot para esas busquedas. "
+                "Use fetch_mode=live la primera vez."
             )
         log_node_end(state, "fetch_flights", start_time)
         return state
@@ -126,21 +130,22 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
     dates = state.global_config.get("preferred_dates", {})
     date_range = state.global_config.get("date_range", 0)
 
-    for route, config in state.routes_config.items():
+    for search_id, config in state.routes_config.items():
         departure_id = config["origin"]
         arrival_id = config["destination"]
+        route_id = config["route_id"]
         trip_type = config.get("trip_type", "one_way")
-        base_date = dates.get(route)
+        base_date = dates.get(search_id)
 
         if not base_date:
-            print(f"  [SKIP] {route}: sin fecha configurada")
+            print(f"  [SKIP] {search_id}: sin fecha configurada")
             continue
 
         base_return_date = None
         if trip_type == "round_trip":
             raw_return_date = config.get("return_date")
             if not raw_return_date:
-                print(f"  [SKIP] {route}: sin fecha de regreso")
+                print(f"  [SKIP] {search_id}: sin fecha de regreso")
                 continue
             base_return_date = datetime.strptime(raw_return_date, "%Y-%m-%d")
 
@@ -155,7 +160,10 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
             date_pairs.append((outbound, returning))
 
         search_label = "ida y vuelta" if trip_type == "round_trip" else "solo ida"
-        print(f"  Buscando {route} ({search_label}) en {len(date_pairs)} fechas...")
+        print(
+            f"  Buscando {route_id} ({search_label}) "
+            f"[{search_id}] en {len(date_pairs)} fechas..."
+        )
 
         for outbound, returning in date_pairs:
             outbound_str = outbound.strftime("%Y-%m-%d")
@@ -165,7 +173,8 @@ def fetch_flights(state: FlightMonitorState) -> FlightMonitorState:
                 departure_id=departure_id,
                 arrival_id=arrival_id,
                 outbound_date=outbound_str,
-                route=route,
+                route_id=route_id,
+                search_id=search_id,
                 trip_type=trip_type,
                 return_date=return_str,
             )
