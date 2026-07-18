@@ -41,13 +41,15 @@ class RunOverrides(BaseModel):
 
 
 class RouteRequest(BaseModel):
-    """One one-way route to monitor during a run."""
+    """One one-way or combined round-trip search requested for a run."""
 
     model_config = ConfigDict(extra="forbid")
 
     origin: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     destination: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    trip_type: Literal["one_way", "round_trip"] = "one_way"
     date: Date
+    return_date: Date | None = None
     max_price: float = Field(gt=0)
     max_stops: int = Field(ge=0, le=5)
 
@@ -57,10 +59,23 @@ class RouteRequest(BaseModel):
         return value.strip().upper()
 
     @model_validator(mode="after")
-    def validate_different_airports(self):
+    def validate_route_contract(self):
         if self.origin == self.destination:
             raise ValueError("origin and destination must be different")
+
+        if self.trip_type == "round_trip":
+            if self.return_date is None:
+                raise ValueError("return_date is required for round_trip")
+            if self.return_date <= self.date:
+                raise ValueError("return_date must be after the outbound date")
+        elif self.return_date is not None:
+            raise ValueError("return_date is only allowed for round_trip")
+
         return self
+
+    def route_id(self) -> str:
+        suffix = "-RT" if self.trip_type == "round_trip" else ""
+        return f"{self.origin}-{self.destination}{suffix}"
 
 
 class RunRequest(BaseModel):
@@ -80,10 +95,7 @@ class RunRequest(BaseModel):
         if self.routes is None:
             return self
 
-        route_ids = [
-            f"{route.origin}-{route.destination}"
-            for route in self.routes
-        ]
+        route_ids = [route.route_id() for route in self.routes]
         if len(route_ids) != len(set(route_ids)):
             raise ValueError("routes must not contain duplicates")
 
@@ -148,8 +160,16 @@ def build_routes_overrides(request: RunRequest | None) -> dict | None:
         return None
 
     return {
-        f"{route.origin}-{route.destination}": {
+        route.route_id(): {
+            "origin": route.origin,
+            "destination": route.destination,
+            "trip_type": route.trip_type,
             "date": route.date.isoformat(),
+            "return_date": (
+                route.return_date.isoformat()
+                if route.return_date is not None
+                else None
+            ),
             "max_price": route.max_price,
             "max_stops": route.max_stops,
         }
@@ -173,7 +193,9 @@ def get_config_defaults():
         routes.append({
             "origin": origin,
             "destination": destination,
+            "trip_type": "one_way",
             "date": values["date"],
+            "return_date": None,
             "max_price": values["max_price"],
             "max_stops": values["max_stops"],
         })
