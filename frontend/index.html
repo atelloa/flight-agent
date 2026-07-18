@@ -58,10 +58,10 @@
 
         .route-row {
             display: grid;
-            grid-template-columns: 90px 90px 150px 130px 110px auto;
+            grid-template-columns: 145px 80px 80px 135px 135px 120px 100px auto;
             gap: 8px;
             align-items: end;
-            padding: 10px 0;
+            padding: 12px 0;
             border-bottom: 1px solid #ddd;
         }
 
@@ -89,9 +89,9 @@
             min-height: 20px;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1100px) {
             .route-row {
-                grid-template-columns: repeat(2, minmax(130px, 1fr));
+                grid-template-columns: repeat(2, minmax(140px, 1fr));
             }
         }
     </style>
@@ -108,8 +108,9 @@
         <h2>Nueva corrida</h2>
 
         <p class="help-text">
-            Cada fila representa un tramo de ida. Para un viaje de ida y vuelta,
-            usa “Agregar regreso” y ajusta la fecha del tramo inverso.
+            Una fila puede representar un tramo solo ida o una búsqueda combinada
+            de ida y vuelta. “Agregar regreso independiente” crea un segundo tramo
+            con reglas y precio separados.
         </p>
 
         <div class="controls">
@@ -140,18 +141,18 @@
             </label>
         </div>
 
-        <h3>Tramos</h3>
+        <h3>Búsquedas</h3>
         <div id="routes-editor"></div>
 
         <div class="controls">
-            <button type="button" id="add-route-button">Agregar tramo</button>
+            <button type="button" id="add-route-button">Agregar búsqueda</button>
             <button type="button" id="load-default-routes-button">Cargar rutas base</button>
             <button type="button" id="run-agent-button">Ejecutar agente</button>
         </div>
 
         <p class="help-text">
-            En modo cached solo aparecerán rutas existentes en el último snapshot.
-            Para una ruta nueva, como LIM-CUZ, se necesita live.
+            Las búsquedas nuevas y las tarifas combinadas necesitan modo live la
+            primera vez. Cached solo reutiliza resultados ya guardados con el mismo tipo.
         </p>
 
         <div id="run-response" class="run-response">Sin ejecución iniciada.</div>
@@ -164,7 +165,7 @@
     <h2>Ofertas más baratas</h2>
 
     <div class="controls">
-        <label for="offers-limit">Cantidad por tramo:</label>
+        <label for="offers-limit">Cantidad por búsqueda:</label>
         <select id="offers-limit">
             <option value="1">1</option>
             <option value="2">2</option>
@@ -204,12 +205,41 @@
         input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
     }
 
+    function syncTripType(row) {
+        const tripType = row.querySelector(".route-trip-type").value;
+        const returnField = row.querySelector(".route-return-field");
+        const returnInput = row.querySelector(".route-return-date");
+        const addIndependentReturnButton = row.querySelector(".add-return-button");
+        const priceLabel = row.querySelector(".route-price-label");
+
+        const isRoundTrip = tripType === "round_trip";
+        returnField.style.display = isRoundTrip ? "flex" : "none";
+        returnInput.required = isRoundTrip;
+        addIndependentReturnButton.style.display = isRoundTrip ? "none" : "inline-block";
+        priceLabel.textContent = isRoundTrip
+            ? "Precio máximo total"
+            : "Precio máximo tramo";
+
+        if (!isRoundTrip) {
+            returnInput.value = "";
+        }
+    }
+
     function createRouteRow(route = {}) {
         const container = document.getElementById("routes-editor");
         const row = document.createElement("div");
         row.className = "route-row";
 
+        const tripType = route.trip_type ?? "one_way";
+
         row.innerHTML = `
+            <label class="route-field">
+                Tipo
+                <select class="route-trip-type">
+                    <option value="one_way" ${tripType === "one_way" ? "selected" : ""}>Solo ida</option>
+                    <option value="round_trip" ${tripType === "round_trip" ? "selected" : ""}>Ida y vuelta combinada</option>
+                </select>
+            </label>
             <label class="route-field">
                 Origen
                 <input class="route-origin" maxlength="3" value="${route.origin ?? ""}" placeholder="LIM" required>
@@ -219,11 +249,15 @@
                 <input class="route-destination" maxlength="3" value="${route.destination ?? ""}" placeholder="CUZ" required>
             </label>
             <label class="route-field">
-                Fecha
+                Fecha ida
                 <input class="route-date" type="date" value="${route.date ?? ""}" required>
             </label>
+            <label class="route-field route-return-field">
+                Fecha regreso
+                <input class="route-return-date" type="date" value="${route.return_date ?? ""}">
+            </label>
             <label class="route-field">
-                Precio máximo
+                <span class="route-price-label">Precio máximo tramo</span>
                 <input class="route-max-price" type="number" min="1" step="0.01" value="${route.max_price ?? 500}" required>
             </label>
             <label class="route-field">
@@ -231,16 +265,18 @@
                 <input class="route-max-stops" type="number" min="0" max="5" step="1" value="${route.max_stops ?? 0}" required>
             </label>
             <div class="route-actions">
-                <button type="button" class="add-return-button">Agregar regreso</button>
+                <button type="button" class="add-return-button">Agregar regreso independiente</button>
                 <button type="button" class="remove-route-button">Eliminar</button>
             </div>
         `;
 
         const originInput = row.querySelector(".route-origin");
         const destinationInput = row.querySelector(".route-destination");
+        const tripTypeSelect = row.querySelector(".route-trip-type");
 
         originInput.addEventListener("input", () => normalizeIataInput(originInput));
         destinationInput.addEventListener("input", () => normalizeIataInput(destinationInput));
+        tripTypeSelect.addEventListener("change", () => syncTripType(row));
 
         row.querySelector(".remove-route-button").addEventListener("click", function() {
             row.remove();
@@ -250,13 +286,16 @@
             createRouteRow({
                 origin: destinationInput.value,
                 destination: originInput.value,
+                trip_type: "one_way",
                 date: "",
+                return_date: null,
                 max_price: row.querySelector(".route-max-price").value,
                 max_stops: row.querySelector(".route-max-stops").value,
             });
         });
 
         container.appendChild(row);
+        syncTripType(row);
     }
 
     async function loadDefaultRoutes() {
@@ -284,44 +323,59 @@
         const rows = Array.from(document.querySelectorAll(".route-row"));
 
         if (rows.length === 0) {
-            throw new Error("Agrega al menos un tramo.");
+            throw new Error("Agrega al menos una búsqueda.");
         }
 
         const routes = rows.map(function(row, index) {
+            const tripType = row.querySelector(".route-trip-type").value;
             const origin = row.querySelector(".route-origin").value.trim().toUpperCase();
             const destination = row.querySelector(".route-destination").value.trim().toUpperCase();
             const date = row.querySelector(".route-date").value;
+            const returnDate = row.querySelector(".route-return-date").value;
             const maxPrice = Number(row.querySelector(".route-max-price").value);
             const maxStops = Number(row.querySelector(".route-max-stops").value);
 
             if (!/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination)) {
-                throw new Error("El tramo " + (index + 1) + " necesita códigos IATA de 3 letras.");
+                throw new Error("La búsqueda " + (index + 1) + " necesita códigos IATA de 3 letras.");
             }
             if (origin === destination) {
-                throw new Error("El tramo " + (index + 1) + " tiene el mismo origen y destino.");
+                throw new Error("La búsqueda " + (index + 1) + " tiene el mismo origen y destino.");
             }
             if (!date) {
-                throw new Error("El tramo " + (index + 1) + " necesita una fecha.");
+                throw new Error("La búsqueda " + (index + 1) + " necesita fecha de ida.");
+            }
+            if (tripType === "round_trip") {
+                if (!returnDate) {
+                    throw new Error("La búsqueda " + (index + 1) + " necesita fecha de regreso.");
+                }
+                if (returnDate <= date) {
+                    throw new Error("El regreso de la búsqueda " + (index + 1) + " debe ser posterior a la ida.");
+                }
             }
             if (!(maxPrice > 0)) {
-                throw new Error("El tramo " + (index + 1) + " necesita un precio máximo válido.");
+                throw new Error("La búsqueda " + (index + 1) + " necesita un precio máximo válido.");
             }
             if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 5) {
-                throw new Error("Las escalas máximas del tramo " + (index + 1) + " deben estar entre 0 y 5.");
+                throw new Error("Las escalas máximas de la búsqueda " + (index + 1) + " deben estar entre 0 y 5.");
             }
 
             return {
                 origin: origin,
                 destination: destination,
+                trip_type: tripType,
                 date: date,
+                return_date: tripType === "round_trip" ? returnDate : null,
                 max_price: maxPrice,
                 max_stops: maxStops,
             };
         });
 
-        const routeIds = routes.map(route => route.origin + "-" + route.destination);
+        const routeIds = routes.map(function(route) {
+            const suffix = route.trip_type === "round_trip" ? "-RT" : "";
+            return route.origin + "-" + route.destination + suffix;
+        });
         if (new Set(routeIds).size !== routeIds.length) {
-            throw new Error("No se puede repetir el mismo tramo.");
+            throw new Error("No se puede repetir la misma búsqueda con el mismo tipo.");
         }
 
         return routes;
@@ -381,12 +435,10 @@
 
     async function cargarHealth() {
         const statusElement = document.getElementById("api-status");
-
         statusElement.textContent = "Consultando API...";
 
         try {
             const response = await fetch(API_BASE + "/health");
-
             if (!response.ok) {
                 statusElement.textContent = "API error: status HTTP " + response.status;
                 return;
@@ -409,14 +461,12 @@
 
         try {
             const response = await fetch(API_BASE + "/runs");
-
             if (!response.ok) {
                 runsStatus.textContent = "Error: la API respondió con status " + response.status;
                 return;
             }
 
             const runs = await response.json();
-
             if (runs.length === 0) {
                 runsStatus.textContent = "No hay corridas registradas.";
                 return;
@@ -426,7 +476,6 @@
             runsStatus.textContent = "Corridas cargadas: " + ultimasRuns.length;
 
             const table = document.createElement("table");
-
             const thead = document.createElement("thead");
             thead.innerHTML = `
                 <tr>
@@ -443,7 +492,6 @@
             table.appendChild(thead);
 
             const tbody = document.createElement("tbody");
-
             ultimasRuns.forEach(function(run) {
                 const row = document.createElement("tr");
                 const duration = run.duration_seconds === null
@@ -462,7 +510,6 @@
                     <td>${run.alerts_generated}</td>
                     <td>${run.recoverable_errors_count}</td>
                 `;
-
                 tbody.appendChild(row);
             });
 
@@ -477,8 +524,15 @@
     function buildOffersUrl() {
         const limit = document.getElementById("offers-limit").value;
         const uniqueAirline = document.getElementById("offers-unique-airline").checked;
-
         return API_BASE + "/offers/cheapest?window=7d&limit=" + limit + "&unique_airline=" + uniqueAirline;
+    }
+
+    function formatRouteTitle(route) {
+        if (route.endsWith("-RT")) {
+            const parts = route.split("-");
+            return parts[0] + " ⇄ " + parts[1] + " (tarifa combinada)";
+        }
+        return route;
     }
 
     async function cargarOffers() {
@@ -490,37 +544,34 @@
 
         try {
             const response = await fetch(buildOffersUrl());
-
             if (!response.ok) {
                 offersStatus.textContent = "Error: la API respondió con status " + response.status;
                 return;
             }
 
             const data = await response.json();
-
             if (data.routes.length === 0) {
                 offersStatus.textContent = "No hay ofertas registradas.";
                 return;
             }
 
             const modo = data.unique_airline ? "1 por aerolínea" : "normal";
-            offersStatus.textContent = "Ofertas cargadas por tramos: " + data.routes.length + " | límite: " + data.limit_per_route + " | modo: " + modo;
+            offersStatus.textContent = "Ofertas cargadas: " + data.routes.length + " búsquedas | límite: " + data.limit_per_route + " | modo: " + modo;
 
             data.routes.forEach(function(routeGroup) {
                 const routeTitle = document.createElement("h3");
-                routeTitle.textContent = routeGroup.route;
+                routeTitle.textContent = formatRouteTitle(routeGroup.route);
                 offersList.appendChild(routeTitle);
 
                 const table = document.createElement("table");
-
                 const thead = document.createElement("thead");
                 thead.innerHTML = `
                     <tr>
-                        <th>Aerolínea</th>
+                        <th>Aerolínea de salida</th>
                         <th>Low cost</th>
-                        <th>Vuelo</th>
+                        <th>Vuelo de salida</th>
                         <th>Precio</th>
-                        <th>Escalas</th>
+                        <th>Escalas salida</th>
                         <th>Salida</th>
                         <th>Capturado</th>
                     </tr>
@@ -528,7 +579,6 @@
                 table.appendChild(thead);
 
                 const tbody = document.createElement("tbody");
-
                 routeGroup.offers.forEach(function(offer) {
                     const row = document.createElement("tr");
                     const lowCostText = offer.is_low_cost ? "Sí" : "No";
@@ -542,7 +592,6 @@
                         <td>${offer.departure_date}</td>
                         <td>${offer.captured_at}</td>
                     `;
-
                     tbody.appendChild(row);
                 });
 
