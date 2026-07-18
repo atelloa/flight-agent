@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict
+from typing import Dict, List
 
 
 @dataclass
 class Flight:
-    """Un vuelo individual"""
+    """Un vuelo encontrado dentro de una busqueda concreta."""
+
     id: str
     flight_number: str
     route: str
@@ -13,16 +14,17 @@ class Flight:
     date: datetime
     airline: str
     stops: int = 0
+    search_id: str = ""
 
 
 @dataclass
 class FlightMonitorState:
-    """Expediente completo del agente de monitoreo"""
+    """Expediente completo del agente de monitoreo."""
 
-    # Config efectiva por ruta para esta corrida
+    # Config efectiva por busqueda para esta corrida, indexada por search_id
     routes_config: Dict = field(default_factory=dict)
 
-    # Reemplazo temporal de las rutas base para una sola corrida
+    # Reemplazo temporal de las busquedas base para una sola corrida
     routes_overrides: Dict = field(default_factory=dict)
 
     # Overrides temporales de modos globales para una sola corrida
