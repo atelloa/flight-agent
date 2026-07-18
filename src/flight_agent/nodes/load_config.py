@@ -17,6 +17,17 @@ OVERRIDABLE_GLOBAL_CONFIG_KEYS = (
 )
 
 
+def route_metadata(route: str, values: dict) -> tuple[str, str, str]:
+    parts = route.split("-")
+    inferred_trip_type = "round_trip" if parts[-1] == "RT" else "one_way"
+
+    origin = values.get("origin", parts[0])
+    destination = values.get("destination", parts[1])
+    trip_type = values.get("trip_type", inferred_trip_type)
+
+    return origin, destination, trip_type
+
+
 def load_config(state: FlightMonitorState) -> FlightMonitorState:
     """
     NODE: Carga configuracion base desde config/routes.yaml y aplica
@@ -41,7 +52,13 @@ def load_config(state: FlightMonitorState) -> FlightMonitorState:
     state.global_config["preferred_dates"] = {}
 
     for route, values in routes_source.items():
+        origin, destination, trip_type = route_metadata(route, values)
+
         state.routes_config[route] = {
+            "origin": origin,
+            "destination": destination,
+            "trip_type": trip_type,
+            "return_date": values.get("return_date"),
             "max_price": values["max_price"],
             "max_stops": values["max_stops"],
         }
